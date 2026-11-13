@@ -2,8 +2,8 @@
 ///
 /// The app can run in two modes, switched at build time with `--dart-define`:
 ///
-///   # Real API (default)
-///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000/api/v1
+///   # Real API (default: https://hr0983.matainja.com/api/v1)
+///   flutter run
 ///
 ///   # Local mock data (original demo, no backend needed)
 ///   flutter run --dart-define=USE_API=false
@@ -23,13 +23,15 @@ abstract final class ApiConfig {
   static const bool useApi = bool.fromEnvironment('USE_API', defaultValue: true);
 
   /// Base URL of the `/api/v1` root, without a trailing slash.
-  /// Default: physical device via `adb reverse tcp:8080 tcp:8080` -> Laragon
-  /// Apache on :8080. Over Wi-Fi (no USB) use
-  /// `--dart-define=API_BASE_URL=http://192.168.1.32:8080/office-management-api/public/api/v1`
-  /// (requires inbound :8080 allowed in Windows Firewall).
+  /// Default: production API. For local dev use
+  /// `--dart-define=API_BASE_URL=http://localhost:8080/office-management-api/public/api/v1`
+  /// with `adb reverse tcp:8080 tcp:8080` (or `http://10.0.2.2:8080/...` on the
+  /// emulator).
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8080/office-management-api/public/api/v1',
+    //defaultValue: 'http://localhost:8080/office-management-api/public/api/v1',
+    defaultValue: 'https://hr0983.matainja.com/api/v1',
+
   );
 
   /// Seed accounts created by the backend's `DatabaseSeeder` (password

@@ -1,6 +1,6 @@
 import 'package:office_management/core/common.dart';
 
-import '../../data/api/api_config.dart';
+// import '../../data/api/api_config.dart'; // only used by the demo-access section
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -66,18 +66,18 @@ class _LoginScreenState extends State<LoginScreen> {
     await _signIn(role);
   }
 
-  void _demo(UserRole r) {
-    final auth = context.read<AuthController>();
-    if (auth.isApiMode) {
-      _email.text = auth.seedEmailFor(r);
-      _password.text = ApiConfig.seedPassword;
-      _submit();
-      return;
-    }
-    _email.text = r.demoEmail;
-    _password.text = AuthController.demoPassword;
-    _signIn(r);
-  }
+  // void _demo(UserRole r) {
+  //   final auth = context.read<AuthController>();
+  //   if (auth.isApiMode) {
+  //     _email.text = auth.seedEmailFor(r);
+  //     _password.text = ApiConfig.seedPassword;
+  //     _submit();
+  //     return;
+  //   }
+  //   _email.text = r.demoEmail;
+  //   _password.text = AuthController.demoPassword;
+  //   _signIn(r);
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +122,9 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (Responsive.width(context) < 900) ...[
-          Row(children: [
+          Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
             Container(
               width: 44,
               height: 44,
@@ -132,7 +134,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(width: 12),
             const Text('OfficeHub', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
           ]),
-          const SizedBox(height: 28),
+          const SizedBox(height: 60),
         ],
         const Text('Welcome back', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
         const SizedBox(height: 6),
@@ -180,60 +182,60 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 8),
         AppButton(label: 'Sign in', expand: true, loading: _loading, onPressed: _submit),
-        const SizedBox(height: 28),
-        Row(children: const [
-          Expanded(child: Divider()),
-          Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('DEMO ACCESS', style: TextStyle(fontSize: 11.5, letterSpacing: 1, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
-          Expanded(child: Divider()),
-        ]),
-        const SizedBox(height: 16),
-        _demoTile(UserRole.employee, Icons.person_outline, 'Personal attendance, leave & services'),
-        const SizedBox(height: 10),
-        _demoTile(UserRole.manager, Icons.groups_outlined, 'Team attendance & approvals'),
-        const SizedBox(height: 10),
-        _demoTile(UserRole.hr, Icons.admin_panel_settings_outlined, 'Organisation administration & analytics'),
-        const SizedBox(height: 14),
-        Builder(builder: (context) {
-          final apiMode = context.read<AuthController>().isApiMode;
-          return Text(
-            apiMode
-                ? 'Seed password: ${ApiConfig.seedPassword}  -  server: ${ApiConfig.baseUrl}'
-                : 'Demo password: ${AuthController.demoPassword} (any password works in this demo)',
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          );
-        }),
+        // const SizedBox(height: 28),
+        // Row(children: const [
+        //   Expanded(child: Divider()),
+        //   Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('DEMO ACCESS', style: TextStyle(fontSize: 11.5, letterSpacing: 1, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
+        //   Expanded(child: Divider()),
+        // ]),
+        // const SizedBox(height: 16),
+        // _demoTile(UserRole.employee, Icons.person_outline, 'Personal attendance, leave & services'),
+        // const SizedBox(height: 10),
+        // _demoTile(UserRole.manager, Icons.groups_outlined, 'Team attendance & approvals'),
+        // const SizedBox(height: 10),
+        // _demoTile(UserRole.hr, Icons.admin_panel_settings_outlined, 'Organisation administration & analytics'),
+        // const SizedBox(height: 14),
+        // Builder(builder: (context) {
+        //   final apiMode = context.read<AuthController>().isApiMode;
+        //   return Text(
+        //     apiMode
+        //         ? 'Seed password: ${ApiConfig.seedPassword}  -  server: ${ApiConfig.baseUrl}'
+        //         : 'Demo password: ${AuthController.demoPassword} (any password works in this demo)',
+        //     style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        //   );
+        // }),
       ],
     );
   }
 
-  Widget _demoTile(UserRole role, IconData icon, String desc) {
-    final auth = context.read<AuthController>();
-    final email = auth.isApiMode ? auth.seedEmailFor(role) : role.demoEmail;
-    return AppCard(
-      onTap: _loading ? null : () => _demo(role),
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: AppColors.teal.withValues(alpha:0.10), borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, color: AppColors.teal, size: 21),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(role.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-                Text(email, style: const TextStyle(fontSize: 12.5, color: AppColors.teal, fontWeight: FontWeight.w600)),
-                Text(desc, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-              ],
-            ),
-          ),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),
-        ],
-      ),
-    );
-  }
+  // Widget _demoTile(UserRole role, IconData icon, String desc) {
+  //   final auth = context.read<AuthController>();
+  //   final email = auth.isApiMode ? auth.seedEmailFor(role) : role.demoEmail;
+  //   return AppCard(
+  //     onTap: _loading ? null : () => _demo(role),
+  //     padding: const EdgeInsets.all(12),
+  //     child: Row(
+  //       children: [
+  //         Container(
+  //           width: 40,
+  //           height: 40,
+  //           decoration: BoxDecoration(color: AppColors.teal.withValues(alpha:0.10), borderRadius: BorderRadius.circular(10)),
+  //           child: Icon(icon, color: AppColors.teal, size: 21),
+  //         ),
+  //         const SizedBox(width: 12),
+  //         Expanded(
+  //           child: Column(
+  //             crossAxisAlignment: CrossAxisAlignment.start,
+  //             children: [
+  //               Text(role.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+  //               Text(email, style: const TextStyle(fontSize: 12.5, color: AppColors.teal, fontWeight: FontWeight.w600)),
+  //               Text(desc, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+  //             ],
+  //           ),
+  //         ),
+  //         const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),
+  //       ],
+  //     ),
+  //   );
+  // }
 }
