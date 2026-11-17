@@ -1,0 +1,308 @@
+================================================================================
+OFFICE MANAGEMENT (OfficeHub) — API CALLS REPORT
+Generated: 2026-11-16
+================================================================================
+
+Base URL : configured by --dart-define=API_BASE_URL (default
+           https://hr0983.matainja.com/api/v1)
+Auth     : Sanctum Bearer token, stored in flutter_secure_storage after login.
+Client   : lib/data/api/office_api_client.dart  (one method per endpoint)
+Flow     : Screen -> AppController -> ApiAppRepository -> OfficeApi -> Laravel
+Mode     : skipped entirely when USE_API=false (mock demo data).
+
+NOTE: Role-scoped endpoints are marked (SA = Super Admin). The repo guards
+them during load() so non-admin users just get empty lists.
+
+================================================================================
+1. HEALTH & AUTH
+================================================================================
+
+GET    /health
+  Why  : Connectivity check — verifies the API base URL is reachable.
+  When : Diagnostics/manual checks.
+
+POST   /auth/login                       {email, password, device_name}
+  Why  : Sign in; returns Sanctum token + user (token saved to secure storage).
+  When : Login screen submit.
+
+POST   /auth/forgot-password           {email}
+  Why  : Ask server to email a password-reset link.
+  When : "Forgot password?" screen submit.
+
+POST   /auth/reset-password            {token, email, password, password_confirmation}
+  Why  : Set a new password using the emailed token. (No app screen yet —
+        link currently opens outside the app.)
+
+GET    /auth/me
+  Why  : Refresh the signed-in user + staff profile on session restore.
+  When : App start when a saved token exists.
+
+POST   /auth/logout
+  Why  : Revoke this device's token.
+  When : User taps Log out.
+
+POST   /auth/logout-all
+  Why  : Revoke tokens on all devices.
+
+POST   /auth/change-password           {current_password, password, password_confirmation}
+  Why  : Employee changes their own password (server revokes other sessions).
+  When : Settings -> Security -> Change password sheet.
+
+PUT    /profile                        {name?, phone?}
+  Why  : Update own profile fields.
+  When : Profile edit (if used by UI).
+
+GET    /me/permissions
+  Why  : Fetch roles+permissions to gate role-scoped endpoints/features.
+  When : After login / session restore.
+
+================================================================================
+2. DEVICES (push)
+================================================================================
+
+POST   /devices                        {platform, push_token, ...}
+  Why  : Register device token for push notifications.
+DELETE /devices/{id}
+  Why  : Remove device token on logout/uninstall.
+
+================================================================================
+3. STAFF / EMPLOYEES
+================================================================================
+
+GET    /staff?search=&department_id=&branch_id=&employment_status=&page=
+  Why  : Employee list (admin), team list (manager), directory.
+POST   /staff                          {employee_code, first_name, last_name,
+                                        email, phone, department_id,
+                                        designation_id, branch_id, team_id,
+                                        manager_id, joining_date,
+                                        employment_status, create_login, role,
+                                        password?}
+  Why  : HR adds an employee. create_login:true also creates a user account;
+        password generated as matainja_<random> if not supplied, stored in
+        staff.initial_password (admins only).
+  When : Admin -> Employees -> Add Employee.
+GET    /staff/{id}
+  Why  : Single employee detail (profile page).
+PUT    /staff/{id}                     {staff fields..., create_login?, role?,
+                                        password?}
+  Why  : Edit employee; also used to create a missing login (create_login)
+        or reset an employee's password (password -> updates initial_password).
+DELETE /staff/{id}
+  Why  : Deactivate (sets employment_status=terminated, revokes tokens).
+GET    /staff/{id}/documents
+  Why  : Employee's uploaded documents.
+GET    /staff/{id}/assets
+  Why  : Assets currently assigned to the employee.
+GET    /staff/{id}/shift-assignments
+  Why  : Which shift an employee is on.
+POST   /staff/{id}/shift-assignments   {shift_id, effective_from, ...}  (HR/SA)
+  Why  : Assign/change an employee's shift.
+DELETE /shift-assignments/{id}                                            (HR/SA)
+  Why  : End a shift assignment.
+
+================================================================================
+4. ORGANISATION
+================================================================================
+
+GET    /branches                        Why: Branch dropdowns/lists (load()).
+POST   /branches                        Why: Create branch (SA).
+PUT    /branches/{id}                   Why: Edit branch (SA).
+GET    /departments                     Why: Department dropdowns/lists.
+POST   /departments                     Why: Create department (SA/HR).
+PUT    /departments/{id}                Why: Edit department (SA/HR).
+GET    /designations                    Why: Designation dropdowns/lists.
+POST   /designations {title}            Why: Auto-created when Add Employee uses a
+                                            new designation title (SA/HR).
+GET    /teams                           Why: Team lists/dropdowns.
+POST   /teams                           Why: Create team (SA/HR).
+
+================================================================================
+5. ATTENDANCE
+================================================================================
+
+POST   /attendance/check-in            {latitude?, longitude?}
+  Why  : Punch in for today.
+POST   /attendance/check-out
+  Why  : Punch out (server computes worked hours/overtime).
+GET    /attendance/today
+  Why  : Home screen punch state (in/break/out/none) + today's shift.
+GET    /attendance/team/today          (Manager/HR/SA)
+  Why  : Manager dashboard — who is in/out today.
+GET    /attendance/summary?staff_id=&from=&to=
+  Why  : Attendance summary stats for reports/profile tab.
+GET    /attendance?staff_id=&from=&to=&page=
+  Why  : Attendance history lists (own / team / admin all).
+GET    /attendance/{id}
+  Why  : Attendance detail screen.
+GET    /attendance/{id}/breaks
+  Why  : Show break list inside attendance detail.
+POST   /attendance/{id}/breaks/start   {break_type?}
+  Why  : Start a break (state diffing: phase in->break).
+POST   /attendance/{id}/breaks/end
+  Why  : End current break.
+GET    /attendance/corrections?status=&page=
+  Why  : Regularization request lists.
+POST   /attendance/corrections         {work_date, requested_in, requested_out, reason}
+  Why  : Employee asks to fix a missed punch.
+POST   /attendance/corrections/{id}/approve   {comment?}     (Manager/HR/SA)
+POST   /attendance/corrections/{id}/reject    {comment req}  (Manager/HR/SA)
+  Why  : Approval centre decisions on punch fixes.
+
+================================================================================
+6. SHIFTS & HOLIDAYS & CALENDAR
+================================================================================
+
+GET    /shifts                          Why: Shift dropdowns/lists.
+GET    /shifts/{id}                     Why: Shift detail.
+POST   /shifts                          Why: Create shift (SA/HR).
+PUT    /shifts/{id}                     Why: Edit shift (SA/HR).
+GET    /holidays?year=&branch_id=       Why: Holiday list/calendar.
+POST   /holidays                        Why: Add holiday (SA/HR).
+PUT    /holidays/{id}                   Why: Edit holiday (SA/HR).
+DELETE /holidays/{id}                   Why: Remove holiday (SA/HR, 409 if past).
+GET    /calendar?month=YYYY-MM          Why: Company calendar screen.
+
+================================================================================
+7. LEAVE
+================================================================================
+
+GET    /leave/types                     Why: Leave-type dropdown on apply form.
+GET    /leave/balances?year=&staff_id=  Why: Balance tiles (own / team).
+GET    /leave/requests?status=&page=    Why: Leave lists (own / approvals).
+POST   /leave/requests (multipart)      Why: Apply for leave, optional attachment.
+GET    /leave/requests/{id}             Why: Leave detail.
+POST   /leave/requests/{id}/withdraw    Why: Withdraw own pending request.
+POST   /leave/requests/{id}/cancel      Why: Cancel an approved request.
+GET    /leave/approvals/pending         (Manager/HR/SA)
+  Why  : Approval centre badge/list.
+POST   /leave/requests/{id}/approve     {comments?}      (Manager/HR/SA)
+POST   /leave/requests/{id}/reject      {comments req}   (Manager/HR/SA)
+
+================================================================================
+8. WORK FROM HOME
+================================================================================
+
+GET    /wfh/requests?status=&page=      Why: WFH lists.
+POST   /wfh/requests                    Why: Apply for WFH (from today onward).
+POST   /wfh/requests/{id}/approve       {comment?}       (Manager/HR/SA)
+POST   /wfh/requests/{id}/reject        {comment req}    (Manager/HR/SA)
+
+================================================================================
+9. DASHBOARDS & REPORTS
+================================================================================
+
+GET    /dashboard/employee              Why: Employee home stats.
+GET    /dashboard/manager               (Manager/HR/SA)  Why: Manager home stats.
+GET    /dashboard/hr                    (HR/SA)          Why: Admin home stats.
+GET    /reports/attendance              Why: Attendance report table.
+GET    /reports/late-arrivals           Why: Late arrivals report.
+GET    /reports/absences                Why: Absence report.
+GET    /reports/overtime                Why: Overtime report.
+GET    /reports/leave                   Why: Leave report.
+GET    /reports/headcount               (HR/SA)  Why: Headcount summary.
+POST   /reports/exports                 Why: Queue CSV export of a report.
+GET    /reports/exports/{id}            Why: Poll export status.
+GET    /reports/exports/{id}/download   Why: Download generated CSV.
+
+================================================================================
+10. ANNOUNCEMENTS & NOTIFICATIONS
+================================================================================
+
+GET    /announcements?page=             Why: Announcement feeds.
+GET    /announcements/{id}              Why: Announcement detail.
+POST   /announcements                   (HR/SA)  Why: Create announcement
+                                             (audience: all|branch|department).
+PUT    /announcements/{id}              Why: Edit (author/admin).
+POST   /announcements/{id}/publish      (HR/SA)  Why: Publish a draft.
+POST   /announcements/{id}/read         Why: Mark read.
+GET    /notifications?page=             Why: Notification list + unread badge
+                                             (extra.unread_count).
+POST   /notifications/{id}/read         Why: Mark one read.
+POST   /notifications/read-all          Why: Mark all read.
+GET    /notification-preferences        Why: Settings toggles initial values.
+PUT    /notification-preferences        Why: Save push/email/in_app toggles.
+
+================================================================================
+11. DOCUMENTS
+================================================================================
+
+GET    /documents?page=                 Why: Document lists (private/staff/public).
+POST   /documents (multipart)           Why: Upload file w/ visibility + owner.
+GET    /documents/{id}                  Why: Document detail.
+GET    /documents/{id}/download         Why: Download file to device.
+DELETE /documents/{id}                  Why: Delete a document.
+     NOTE: app doesn't collect a file path -> addDocument stays local-only
+     (known gap, see AGENTS.md). Delete works.
+
+================================================================================
+12. EXPENSES
+================================================================================
+
+GET    /expense/categories              Why: Category dropdown on claim form.
+GET    /expenses?status=&page=          Why: Expense lists (own / approvals).
+POST   /expenses (multipart)            Why: New claim, optional receipt;
+                                           submit=false saves draft.
+GET    /expenses/{id}                   Why: Claim detail.
+PATCH  /expenses/{id}                   Why: Edit own draft/rejected claim.
+POST   /expenses/{id}/submit            Why: Submit draft for approval.
+POST   /expenses/{id}/approve           {comments?}      (Manager/HR/SA)
+POST   /expenses/{id}/reject            {comments req}   (Manager/HR/SA)
+POST   /expenses/{id}/mark-paid         {payment_reference?}  (HR/SA)
+
+================================================================================
+13. MEETINGS
+================================================================================
+
+GET    /meeting-rooms?branch_id=        Why: Room picker when booking.
+GET    /meetings?all=&page=             Why: Meeting lists (all=admin only).
+POST   /meetings                        Why: Create meeting (ISO-8601 times).
+GET    /meetings/{id}                   Why: Meeting detail.
+PATCH  /meetings/{id}                   Why: Edit (organiser/admin).
+POST   /meetings/{id}/cancel            Why: Cancel (organiser/admin).
+POST   /meetings/{id}/response          Why: RSVP accepted|declined|tentative.
+
+================================================================================
+14. ASSETS
+================================================================================
+
+GET    /assets?status=&page=            Why: Asset inventories / my assets.
+POST   /assets                          Why: Register new asset.
+GET    /assets/{id}                     Why: Asset detail.
+PATCH  /assets/{id}                     Why: Edit status/details.
+POST   /assets/{id}/assign              {staff_id}   Why: Assign to employee.
+POST   /assets/{id}/return              {condition_notes?}  Why: Return asset.
+
+================================================================================
+15. HELPDESK TICKETS
+================================================================================
+
+GET    /ticket-categories               Why: Category dropdown on new ticket.
+GET    /tickets?status=&priority=&page= Why: Ticket lists.
+POST   /tickets                         Why: Create ticket (priority low..urgent).
+GET    /tickets/{id}                    Why: Ticket detail/conversation.
+POST   /tickets/{id}/comments           Why: Reply in thread.
+POST   /tickets/{id}/assign             (HR/SA)  Why: Assign to a user.
+POST   /tickets/{id}/status             (HR/SA)  Why: Move through workflow.
+POST   /tickets/{id}/close              Why: Close ticket.
+
+================================================================================
+16. ADMIN ONLY
+================================================================================
+
+GET    /admin/users?search=&page=       Why: Manage user accounts/roles.
+POST   /admin/users/{id}/roles          Why: Replace a user's roles.
+GET    /admin/roles                     Why: Role list.
+POST   /admin/roles                     Why: Create role.
+PUT    /admin/roles/{id}                Why: Rename role / set permissions.
+GET    /admin/settings                  Why: App settings map.
+PUT    /admin/settings                  Why: Save settings.
+GET    /admin/audit-logs?...&page=      Why: Audit trail screen (50/page).
+
+================================================================================
+KNOWN GAPS vs THE API (see AGENTS.md)
+================================================================================
+- No payslip endpoint -> payslips list always empty in API mode.
+- Document upload: UI doesn't collect a file path -> add stays local-only.
+- No "unpublish announcement" endpoint -> local toggle only.
+- withdrawn/cancelled leave/WFH statuses collapse to 'rejected' in the app.
+================================================================================

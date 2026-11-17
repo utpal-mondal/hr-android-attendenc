@@ -15,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   bool _hide = true;
   bool _loading = false;
-  bool _remember = true;
+  late bool _remember = context.read<AuthController>().rememberMe;
 
   @override
   void dispose() {
@@ -30,17 +30,15 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     final app = context.read<AppController>();
     final auth = context.read<AuthController>();
-    auth.rememberMe = _remember;
     app.start(role); // loads mock data, shimmer shows meanwhile
-    auth.signIn(role); // router redirect opens the role's home
+    auth.signIn(role, remember: _remember); // router redirect opens the role's home
   }
 
   Future<void> _apiSignIn() async {
     setState(() => _loading = true);
     final auth = context.read<AuthController>();
-    final error = await auth.login(_email.text.trim(), _password.text);
+    final error = await auth.login(_email.text.trim(), _password.text, remember: _remember);
     if (!mounted) return;
-    auth.rememberMe = _remember;
     if (error != null) {
       setState(() => _loading = false);
       showAppSnack(context, error, error: true);
@@ -61,6 +59,10 @@ class _LoginScreenState extends State<LoginScreen> {
     final role = auth.roleForEmail(_email.text);
     if (role == null) {
       showAppSnack(context, 'Account not found. Use one of the demo accounts below.', error: true);
+      return;
+    }
+    if (_password.text != AuthController.demoPassword) {
+      showAppSnack(context, 'Incorrect password.', error: true);
       return;
     }
     await _signIn(role);
@@ -176,12 +178,27 @@ class _LoginScreenState extends State<LoginScreen> {
         Row(
           children: [
             Checkbox(value: _remember, activeColor: AppColors.teal, onChanged: (v) => setState(() => _remember = v ?? false)),
-            const Expanded(child: Text('Remember me', style: TextStyle(fontSize: 13.5))),
-            TextButton(onPressed: () => context.push('/auth/forgot-password'), child: const Text('Forgot password?')),
+            const Expanded(child: Text('Remember me', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5))),
+            Flexible(
+              child: TextButton(
+                onPressed: () => context.push('/auth/forgot-password'),
+                child: const Text('Forgot password?', maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         AppButton(label: 'Sign in', expand: true, loading: _loading, onPressed: _submit),
+        // Demo build only (USE_API=false): list the mock accounts, since any
+        // password works there and testers otherwise can't guess the emails.
+        if (!context.read<AuthController>().isApiMode) ...[
+          const SizedBox(height: 20),
+          Text(
+            'Demo accounts: ${UserRole.values.map((r) => r.demoEmail).join(', ')}\n'
+            'Password: ${AuthController.demoPassword}',
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ],
         // const SizedBox(height: 28),
         // Row(children: const [
         //   Expanded(child: Divider()),

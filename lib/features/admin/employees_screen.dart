@@ -21,8 +21,7 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
       destructive: e.active,
     );
     if (!ok) return;
-    await app.toggleEmployeeActive(e);
-    if (context.mounted) showAppSnack(context, e.active ? '${e.name} activated.' : '${e.name} deactivated.');
+    if (await app.toggleEmployeeActive(e) && context.mounted) showAppSnack(context, e.active ? '${e.name} activated.' : '${e.name} deactivated.');
   }
 
   @override

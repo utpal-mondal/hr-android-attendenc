@@ -33,6 +33,7 @@ class ApiAppRepository implements AppRepository {
   final OfficeApi _api;
 
   /// Last write-side error message, for diagnostics.
+  @override
   String? lastError;
 
   // ----------------------------------------------------------- lookup caches
@@ -85,15 +86,20 @@ class ApiAppRepository implements AppRepository {
     }
   }
 
-  /// Runs a write call, storing/logging failures instead of throwing.
+  /// Runs a write call. Failures are logged, stored in [lastError] and
+  /// rethrown as [RepoWriteException] so the controller can roll back.
   Future<void> _run(String label, Future<void> Function() call) async {
+    lastError = null;
     try {
       await call();
     } on ApiException catch (e) {
       lastError = e.message;
       debugPrint('ApiAppRepository.$label failed: $e');
+      throw RepoWriteException(e.message);
     } catch (e) {
+      lastError = 'Something went wrong while saving. Please try again.';
       debugPrint('ApiAppRepository.$label failed: $e');
+      throw RepoWriteException(lastError!);
     }
   }
 
@@ -207,7 +213,12 @@ class ApiAppRepository implements AppRepository {
       _guard(_allPages((p) => _api.listExpenses(page: p)), const <Json>[]),
       _guard(_allPages((p) => _api.listMeetings(page: p)), const <Json>[]),
       _guard(_allPages((p) => _api.listTickets(page: p)), const <Json>[]),
-      _guard(_api.auditLogs(page: 1), PagedResult(items: const [], currentPage: 1)),
+      _guard(
+        me?.isAdmin == true
+            ? _api.auditLogs(page: 1)
+            : Future.value(PagedResult(items: const [], currentPage: 1)),
+        PagedResult(items: const [], currentPage: 1),
+      ),
       _guard(_api.leaveBalances(year: now.year), const <Json>[]),
       _guard(
         me?.isAdmin == true ? _allPages((p) => _api.listAssets(page: p)) : Future.value(const <Json>[]),
@@ -478,8 +489,13 @@ class ApiAppRepository implements AppRepository {
         final appliedByCorrection = a.note == 'Regularized';
 
         if (!appliedByCorrection) {
+          final loc = a.punchLocation;
           if (prev == 'none' && next == 'in') {
-            final res = await _api.checkIn();
+            final res = await _api.checkIn(
+              latitude: loc?.latitude,
+              longitude: loc?.longitude,
+              accuracyMeters: loc?.accuracyMeters,
+            );
             serverId = intOrNull(res['id']);
             if (serverId != null) _attIds[a.id] = serverId;
           } else if (serverId != null) {
@@ -489,7 +505,11 @@ class ApiAppRepository implements AppRepository {
               await _api.endBreak(serverId);
             } else if (next == 'out') {
               if (prev == 'break') await _api.endBreak(serverId);
-              await _api.checkOut();
+              await _api.checkOut(
+                latitude: loc?.latitude,
+                longitude: loc?.longitude,
+                accuracyMeters: loc?.accuracyMeters,
+              );
             }
           }
         }
@@ -615,8 +635,11 @@ class ApiAppRepository implements AppRepository {
             name: b.name,
             code: _code(b.name),
             address: b.address.isEmpty ? b.city : b.address,
-            timezone: b.workingHours.isEmpty ? null : b.workingHours,
+            timezone: _timezoneOf(b),
             status: 'active',
+            latitude: b.latitude,
+            longitude: b.longitude,
+            geofenceRadiusMeters: b.geofenceRadiusMeters,
           );
           final newId = intOrNull(res['id']);
           if (newId != null) {
@@ -627,10 +650,21 @@ class ApiAppRepository implements AppRepository {
           await _api.updateBranch(id, {
             'name': b.name,
             'address': b.address.isEmpty ? b.city : b.address,
-            'timezone': b.workingHours.isEmpty ? null : b.workingHours,
+            if (_timezoneOf(b) != null) 'timezone': _timezoneOf(b),
+            'latitude': b.latitude,
+            'longitude': b.longitude,
+            'geofence_radius_meters': b.geofenceRadiusMeters,
           });
         }
       });
+
+  /// The API stores an IANA timezone where the app shows "working hours";
+  /// only send the field when it actually holds a timezone (e.g. a branch
+  /// loaded from the server), never free text like "09:30 AM - 06:30 PM".
+  String? _timezoneOf(Branch b) {
+    final v = b.workingHours.trim();
+    return RegExp(r'^(UTC|[A-Za-z]+/[A-Za-z_\-+0-9/]+)$').hasMatch(v) ? v : null;
+  }
 
   @override
   Future<void> saveShift(Shift s, {bool isNew = false}) =>
@@ -833,4 +867,18 @@ class ApiAppRepository implements AppRepository {
         final id = _idOf(_ticketIds, t.id);
         if (id != null) await _api.commentOnTicket(id, text);
       });
+
+  @override
+  Future<Map<String, String>> loadCompanySettings() async {
+    try {
+      final raw = await _api.adminSettings();
+      return raw.map((k, v) => MapEntry(k, v?.toString() ?? ''));
+    } on ApiException catch (e) {
+      throw RepoWriteException(e.isForbidden ? 'Only a Super Admin can view organisation settings.' : e.message);
+    }
+  }
+
+  @override
+  Future<void> saveCompanySettings(Map<String, Object?> settings) =>
+      _run('saveCompanySettings', () => _api.updateAdminSettings(settings));
 }

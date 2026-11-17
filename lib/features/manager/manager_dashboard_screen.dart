@@ -69,12 +69,10 @@ class ManagerDashboardScreen extends StatelessWidget {
                     item: p,
                     employeeName: app.nameOf(p.employeeId),
                     onApprove: () async {
-                      await app.reviewApproval(p, RequestStatus.approved);
-                      if (context.mounted) showAppSnack(context, 'Request approved.');
+                      if (await app.reviewApproval(p, RequestStatus.approved) && context.mounted) showAppSnack(context, 'Request approved.');
                     },
                     onReject: () async {
-                      await app.reviewApproval(p, RequestStatus.rejected);
-                      if (context.mounted) showAppSnack(context, 'Request rejected.');
+                      if (await app.reviewApproval(p, RequestStatus.rejected) && context.mounted) showAppSnack(context, 'Request rejected.');
                     },
                   ),
                 ),

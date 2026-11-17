@@ -22,14 +22,35 @@ class _QrAttendanceScreenState extends State<QrAttendanceScreen> with SingleTick
     setState(() => _scanning = true);
     await Future<void>.delayed(const Duration(milliseconds: 1600));
     if (!mounted) return;
-    final msg = await context.read<AppController>().qrScan();
+    final app = context.read<AppController>();
+    final location = await runLocationVerification(context, office: app.me.branch);
+    if (!mounted) return;
+    if (location == null) {
+      setState(() => _scanning = false);
+      return;
+    }
+    final msg = await app.qrScan(location: location);
     if (!mounted) return;
     setState(() => _scanning = false);
+    if (msg == null) return; // failure already reported
     await showSuccessDialog(context, title: 'QR verified', message: msg);
   }
 
   @override
   Widget build(BuildContext context) {
+    // The QR scan is simulated; with a real backend it would let anyone punch
+    // without being at the office, so it is only offered in the demo build.
+    if (context.read<AuthController>().isApiMode) {
+      return PageScaffold(
+        title: 'QR Attendance',
+        shimmer: ShimmerLayout.list,
+        builder: (context) => const EmptyState(
+          icon: Icons.qr_code_2,
+          title: 'QR attendance is not available',
+          message: 'Use Check In on the Attendance page instead.',
+        ),
+      );
+    }
     return PageScaffold(
       title: 'QR Attendance',
       subtitle: 'Scan the office QR code to mark attendance',

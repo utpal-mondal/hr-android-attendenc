@@ -189,8 +189,7 @@ class HelpdeskScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
-                          Text(t.id, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary, fontSize: 12.5)),
-                          const Spacer(),
+                          Expanded(child: Text(t.id, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary, fontSize: 12.5))),
                           StatusBadge(label: t.status, color: _statusColor(t.status)),
                         ]),
                         const SizedBox(height: 6),

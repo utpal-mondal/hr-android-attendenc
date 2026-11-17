@@ -52,6 +52,7 @@ class EmployeeProfileBody extends StatefulWidget {
 
 class _EmployeeProfileBodyState extends State<EmployeeProfileBody> {
   int _tab = 0;
+  bool _showPassword = false;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +130,15 @@ class _EmployeeProfileBodyState extends State<EmployeeProfileBody> {
         _Info('Branch', e.branch),
         _Info('Shift', e.shift),
         _Info('Reports to', managerName ?? '-'),
+        // Temporary password: HR only, masked until tapped.
+        if (e.initialPassword != null && app.role == UserRole.hr)
+          InkWell(
+            onTap: () => setState(() => _showPassword = !_showPassword),
+            child: Row(children: [
+              Expanded(child: _Info('Login password', _showPassword ? e.initialPassword! : '••••••••')),
+              Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: AppColors.textSecondary),
+            ]),
+          ),
         _Info('Type', e.employmentType),
         _Info('Joined', '${Fmt.date(e.joinDate)} ($months months)'),
       ]),

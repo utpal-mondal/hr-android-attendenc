@@ -53,6 +53,16 @@ class AppSnapshot {
   final List<LeaveBalance> leaveBalances;
 }
 
+/// Thrown by a repository write hook when the backend rejected or never
+/// received the change. [message] is safe to show to the user.
+class RepoWriteException implements Exception {
+  RepoWriteException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Repository contract.
 ///
 /// The UI never talks to mock lists directly. Controllers depend on this
@@ -69,10 +79,15 @@ abstract class AppRepository {
   List<String> get expenseCategoryNames;
   List<String> get ticketCategoryNames;
 
+  /// Server error message from the most recent failed write call, if any.
+  /// Null in the mock repository and after any successful write.
+  String? get lastError;
+
   Future<AppSnapshot> load();
 
   // Write-side hooks. The mock implementation is a no-op because the
-  // controller keeps local state; an API implementation would POST/PUT here.
+  // controller keeps local state; the API implementation POSTs/PUTs here and
+  // throws [RepoWriteException] when the write fails.
   // `isNew` distinguishes create calls from updates on local-only items.
   Future<void> saveEmployee(Employee employee, {bool isNew});
   Future<void> saveAttendance(Attendance attendance);
@@ -100,4 +115,8 @@ abstract class AppRepository {
   Future<void> assignAsset(Asset asset, String? employeeId);
   Future<void> saveTicket(Ticket ticket, {bool isNew});
   Future<void> replyTicket(Ticket ticket, String text);
+
+  // Organisation-wide settings (`/admin/settings`, Super Admin only).
+  Future<Map<String, String>> loadCompanySettings();
+  Future<void> saveCompanySettings(Map<String, Object?> settings);
 }

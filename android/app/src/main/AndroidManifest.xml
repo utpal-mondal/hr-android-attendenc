@@ -2,8 +2,11 @@
     <!-- Needed to reach the Laravel API. Cleartext stays enabled so the app
          can talk to a plain-HTTP dev server (10.0.2.2 / localhost / LAN IP). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- GPS fix sent with check-in / check-out; the API enforces the branch geofence. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
-        android:label="office_management"
+        android:label="HRM Matainja"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

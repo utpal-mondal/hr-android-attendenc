@@ -11,6 +11,14 @@ class AttendanceBreak {
   }
 }
 
+/// GPS fix taken when the employee punches in or out.
+class PunchLocation {
+  const PunchLocation({required this.latitude, required this.longitude, required this.accuracyMeters});
+  final double latitude;
+  final double longitude;
+  final int accuracyMeters;
+}
+
 class AttendanceEvent {
   AttendanceEvent(this.type, this.time);
   final AttendanceEventType type;
@@ -46,6 +54,10 @@ class Attendance {
   final List<AttendanceBreak> breaks;
   String office;
   String? note;
+
+  /// Device location captured for the most recent punch (check-in or
+  /// check-out). Sent to the API, which enforces the branch geofence.
+  PunchLocation? punchLocation;
 
   Duration get breakTime => breaks.fold(Duration.zero, (sum, b) => sum + b.duration);
 

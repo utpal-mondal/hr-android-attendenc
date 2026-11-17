@@ -52,11 +52,16 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       showAppSnack(context, 'Insufficient ${bal.type} balance (${bal.remaining} day(s) left).', error: true);
       return;
     }
+    final clash = app.overlappingLeave(from, to);
+    if (clash != null) {
+      showAppSnack(context, 'You already have a ${clash.type} request (${clash.status.label}) for these dates.', error: true);
+      return;
+    }
     setState(() => _busy = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    await app.submitLeave(type: _type!, from: from, to: to, halfDay: _half, reason: _reason.text.trim(), attachment: _attachment);
+    final ok = await app.submitLeave(type: _type!, from: from, to: to, halfDay: _half, reason: _reason.text.trim(), attachment: _attachment);
     if (!mounted) return;
     setState(() => _busy = false);
+    if (!ok) return; // error already shown
     await showSuccessDialog(context, title: 'Request submitted', message: 'Your $_type request for ${_days() % 1 == 0 ? _days().toInt() : _days()} day(s) was sent to your manager for approval.');
     if (mounted) context.pop();
   }

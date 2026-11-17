@@ -122,6 +122,7 @@ Employee employeeFromStaff(Json j, {UserRole role = UserRole.employee, String sh
     active: status != 'terminated' && status != 'resigned',
     role: role,
     address: str(branch?['address']),
+    initialPassword: j['initial_password']?.toString(),
   );
 }
 
@@ -140,6 +141,9 @@ Branch branchFromJson(Json j) => Branch(
       city: str(j['address']).contains(',')
           ? str(j['address']).split(',').last.trim()
           : str(j['name']),
+      latitude: double.tryParse(str(j['latitude'])),
+      longitude: double.tryParse(str(j['longitude'])),
+      geofenceRadiusMeters: int.tryParse(str(j['geofence_radius_meters'])),
     );
 
 Shift shiftFromJson(Json j) {

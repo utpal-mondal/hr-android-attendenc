@@ -275,6 +275,12 @@ class AppUser {
 
 typedef Json = Map<String, dynamic>;
 
+class _GetCacheEntry {
+  _GetCacheEntry(this.env, this.at);
+  final Envelope env;
+  final DateTime at;
+}
+
 class OfficeApi {
   OfficeApi({
     required String baseUrl,
@@ -333,9 +339,106 @@ class OfficeApi {
 
   bool get isLoggedIn => _token != null;
 
+  // ── response cache + request dedup ──────────────────────────────────────────
+
+  /// Cache lifetime per GET path prefix (longest match wins). Paths not
+  /// listed are never response-cached. Every successful mutation
+  /// (POST/PUT/PATCH/DELETE) clears the whole cache so writes always show.
+  /// Tune freely — it only affects reads.
+  final Map<String, Duration> cacheTtl = {
+    '/departments': const Duration(minutes: 10),
+    '/designations': const Duration(minutes: 10),
+    '/branches': const Duration(minutes: 10),
+    '/teams': const Duration(minutes: 10),
+    '/shifts': const Duration(minutes: 5),
+    '/leave/types': const Duration(minutes: 10),
+    '/expense/categories': const Duration(minutes: 10),
+    '/ticket-categories': const Duration(minutes: 10),
+    '/meeting-rooms': const Duration(minutes: 10),
+    '/holidays': const Duration(minutes: 5),
+    '/me/permissions': const Duration(minutes: 10),
+    '/attendance/today': const Duration(seconds: 20),
+    '/dashboard/': const Duration(seconds: 30),
+    '/notifications': const Duration(seconds: 30),
+  };
+
+  final Map<String, _GetCacheEntry> _getCache = {};
+  final Map<String, Future<Envelope>> _inflightGet = {};
+
+  /// Bumped whenever the cache is invalidated; a GET that started under an
+  /// older generation is not cached (it may predate a write).
+  int _cacheGeneration = 0;
+
+  /// Clears cached GET responses (e.g. after an external change is known).
+  void clearCache() => _invalidateCache();
+
+  void _invalidateCache() {
+    _cacheGeneration++;
+    _getCache.clear();
+    _inflightGet.clear();
+  }
+
+  Duration? _ttlFor(String path) {
+    String? best;
+    for (final prefix in cacheTtl.keys) {
+      if (path.startsWith(prefix) &&
+          (best == null || prefix.length > best.length)) {
+        best = prefix;
+      }
+    }
+    return best == null ? null : cacheTtl[best];
+  }
+
+  String _cacheKey(String path, Json? query) {
+    if (query == null || query.isEmpty) return path;
+    final keys = query.keys.toList()..sort();
+    return '$path?${keys.map((k) => '$k=${query[k]}').join('&')}';
+  }
+
   // ── low-level helpers ──────────────────────────────────────────────────────
 
   Future<Envelope> _send(
+    String method,
+    String path, {
+    Json? query,
+    dynamic body,
+  }) async {
+    if (method == 'GET') {
+      final key = _cacheKey(path, query);
+      final ttl = _ttlFor(path);
+      if (ttl != null) {
+        final hit = _getCache[key];
+        if (hit != null && DateTime.now().difference(hit.at) < ttl) {
+          return hit.env;
+        }
+      }
+      // Collapse identical in-flight GETs into one request.
+      final running = _inflightGet[key];
+      if (running != null) return running;
+
+      final gen = _cacheGeneration;
+      final future = _request(method, path, query: query, body: body);
+      _inflightGet[key] = future;
+      try {
+        final env = await future;
+        if (ttl != null && gen == _cacheGeneration) {
+          _getCache[key] = _GetCacheEntry(env, DateTime.now());
+        }
+        return env;
+      } finally {
+        if (identical(_inflightGet[key], future)) _inflightGet.remove(key);
+      }
+    }
+
+    // Invalidate before and after: reads that start while the write is in
+    // flight must not be cached either.
+    _invalidateCache();
+    final env = await _request(method, path, query: query, body: body);
+    _invalidateCache(); // a successful write invalidates cached reads
+    return env;
+  }
+
+  Future<Envelope> _request(
     String method,
     String path, {
     Json? query,
@@ -395,21 +498,47 @@ class OfficeApi {
   // ── session ────────────────────────────────────────────────────────────────
 
   /// Load a saved token and refresh the user. Returns null if not logged in.
+  /// Restores the saved session. Returns null when there is no saved token or
+  /// the server rejected it (401 — token is cleared). Network errors are
+  /// rethrown with the token kept, so an offline launch does not log out.
   Future<AppUser?> restoreSession() async {
-    _token = await _storage.read(key: _tokenKey);
+    try {
+      _token = await _storage.read(key: _tokenKey);
+    } catch (e) {
+      debugPrint('OfficeApi.restoreSession: cannot read token: $e');
+      _token = null;
+    }
     if (_token == null) return null;
     try {
       return await me();
-    } on ApiException {
-      await clearSession();
-      return null;
+    } on ApiException catch (e) {
+      if (e.isUnauthorized || e.isForbidden) {
+        await clearSession();
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  /// Removes the token from secure storage but keeps it in memory, so the
+  /// current session works and the next launch asks for a password.
+  Future<void> forgetStoredToken() async {
+    try {
+      await _storage.delete(key: _tokenKey);
+    } catch (e) {
+      debugPrint('OfficeApi.forgetStoredToken failed: $e');
     }
   }
 
   Future<void> clearSession() async {
     _token = null;
     currentUser = null;
-    await _storage.delete(key: _tokenKey);
+    _invalidateCache();
+    try {
+      await _storage.delete(key: _tokenKey);
+    } catch (e) {
+      debugPrint('OfficeApi.clearSession: cannot delete token: $e');
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -598,13 +727,19 @@ class OfficeApi {
     String? address,
     String? timezone,
     String? status,
+    double? latitude,
+    double? longitude,
+    int? geofenceRadiusMeters,
   }) async =>
       _map(await _post('/branches', {
         'name': name,
         'code': code,
         'address': address,
-        'timezone': timezone,
+        if (timezone != null) 'timezone': timezone,
         'status': status,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        if (geofenceRadiusMeters != null) 'geofence_radius_meters': geofenceRadiusMeters,
       }));
 
   /// PUT /branches/{id} (Super Admin)
@@ -633,8 +768,8 @@ class OfficeApi {
   Future<List<Json>> designations() async => _list(await _get('/designations'));
 
   /// POST /designations (SA/HR)
-  Future<Json> createDesignation({required String title, int? level}) async =>
-      _map(await _post('/designations', {'title': title, 'level': level}));
+  Future<Json> createDesignation({required String title}) async =>
+      _map(await _post('/designations', {'title': title}));
 
   // ── teams ──
   /// GET /teams

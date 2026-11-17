@@ -4,7 +4,7 @@ class HelpSupportScreen extends StatelessWidget {
   const HelpSupportScreen({super.key});
 
   static const _faqs = [
-    ('How do I check in?', 'Open Home or Attendance and tap Check In. The app verifies your location against the office geofence (simulated in this demo) before marking you present.'),
+    ('How do I check in?', 'Open Home or Attendance and tap Check In. The app reads your phone\'s GPS location and the server checks it against your office geofence before marking you present. Allow location access when asked.'),
     ('What if I forgot to check out?', 'Submit a regularization request from Attendance > Regularization. Your manager will review and approve it, after which your record is corrected.'),
     ('How is a late arrival calculated?', 'Checking in after your shift start time plus the grace period (usually 15 minutes) marks the day as Late.'),
     ('How many WFH days can I take?', 'Up to 6 days per calendar month, subject to manager approval.'),

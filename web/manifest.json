@@ -1,11 +1,11 @@
 {
-    "name": "office_management",
-    "short_name": "office_management",
+    "name": "OfficeHub",
+    "short_name": "OfficeHub",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "OfficeHub - office management and attendance.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

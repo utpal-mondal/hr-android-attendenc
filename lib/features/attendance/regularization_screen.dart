@@ -38,7 +38,7 @@ class _RegularizationScreenState extends State<RegularizationScreen> {
     }
     setState(() => _busy = true);
     final d = _date!;
-    await context.read<AppController>().submitRegularization(
+    final ok = await context.read<AppController>().submitRegularization(
           date: d,
           checkIn: DateTime(d.year, d.month, d.day, i.hour, i.minute),
           checkOut: DateTime(d.year, d.month, d.day, o.hour, o.minute),
@@ -46,6 +46,10 @@ class _RegularizationScreenState extends State<RegularizationScreen> {
           attachment: _attachment,
         );
     if (!mounted) return;
+    if (!ok) {
+      setState(() => _busy = false);
+      return; // error already shown
+    }
     setState(() {
       _busy = false;
       _date = null;

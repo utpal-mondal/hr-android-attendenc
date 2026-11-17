@@ -72,7 +72,7 @@ class _LeaveScreenState extends State<LeaveScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(n(b.remaining), style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: color, height: 1)),
-              Text('  / ${n(b.total)} days', style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              Flexible(child: Text('  / ${n(b.total)} days', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13))),
             ],
           ),
           const SizedBox(height: 12),

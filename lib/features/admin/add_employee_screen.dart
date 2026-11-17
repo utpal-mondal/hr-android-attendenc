@@ -40,24 +40,29 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
       return;
     }
     setState(() => _busy = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    final e = await app.addEmployee(
-      name: _name.text.trim(),
-      email: email,
-      phone: _phone.text.trim(),
-      gender: _gender!,
-      department: _department!,
-      designation: _designation.text.trim(),
-      branch: _branch!,
-      shift: _shift!,
-      managerId: _managerId,
-      joinDate: _joinDate!,
-      employmentType: _type,
-    );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    await showSuccessDialog(context, title: 'Employee added', message: '${e.name} (${e.id}) has been added to ${e.department}.');
-    if (mounted) context.pop();
+    try {
+      final e = await app.addEmployee(
+        name: _name.text.trim(),
+        email: email,
+        phone: _phone.text.trim(),
+        gender: _gender!,
+        department: _department!,
+        designation: _designation.text.trim(),
+        branch: _branch!,
+        shift: _shift!,
+        managerId: _managerId,
+        joinDate: _joinDate!,
+        employmentType: _type,
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await showSuccessDialog(context, title: 'Employee added', message: '${e.name} (${e.id}) has been added to ${e.department}.');
+      if (mounted) context.pop();
+    } catch (err) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAppSnack(context, err.toString(), error: true);
+    }
   }
 
   @override

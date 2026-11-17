@@ -29,8 +29,7 @@ class _ApprovalsViewState extends State<ApprovalsView> {
             title: 'Reject request?', message: '${app.nameOf(item.employeeId)} will be notified that the request was rejected.', confirmLabel: 'Reject', destructive: true);
         if (!ok) return;
       }
-      await app.reviewApproval(item, s);
-      if (mounted) showAppSnack(this.context, s == RequestStatus.approved ? 'Request approved.' : 'Request rejected.');
+      if (await app.reviewApproval(item, s) && mounted) showAppSnack(this.context, s == RequestStatus.approved ? 'Request approved.' : 'Request rejected.');
     }
 
     return Column(

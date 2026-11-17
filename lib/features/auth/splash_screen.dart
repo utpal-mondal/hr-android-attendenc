@@ -10,26 +10,50 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..forward();
 
-  late final Future<bool> _restore;
+  /// Set when the saved session could not be checked (server unreachable).
+  String? _offlineError;
 
   @override
   void initState() {
     super.initState();
     // Kick off session restore immediately so it overlaps the animation.
-    _restore = context.read<AuthController>().restoreSession();
-    Future<void>.delayed(const Duration(milliseconds: 2300), () async {
+    final restore = _tryRestore();
+    Future<void>.delayed(const Duration(milliseconds: 2300), () => _continue(restore));
+  }
+
+  Future<bool?> _tryRestore() async {
+    try {
+      return await context.read<AuthController>().restoreSession();
+    } catch (e) {
+      return null; // unreachable server: keep the token, offer a retry
+    }
+  }
+
+  Future<void> _continue(Future<bool?> restore) async {
+    if (!mounted) return;
+    final auth = context.read<AuthController>();
+    // In API mode, a stored token restores the session; the router redirect
+    // then sends us straight to the role's home.
+    if (auth.isApiMode) {
+      final restored = await restore;
       if (!mounted) return;
-      final auth = context.read<AuthController>();
-      // In API mode, a stored token restores the session; the router redirect
-      // then sends us straight to the role's home.
-      if (auth.isApiMode && await _restore) {
-        if (!mounted) return;
+      if (restored == null) {
+        setState(() => _offlineError = 'Cannot reach the server. Check your internet connection and try again.');
+        return;
+      }
+      if (restored) {
         context.read<AppController>().start(auth.role!);
         return;
       }
-      if (!mounted) return;
-      context.go(auth.onboardingSeen ? '/auth/login' : '/auth/onboarding');
-    });
+    }
+    await auth.loadPreferences();
+    if (!mounted) return;
+    context.go(auth.onboardingSeen ? '/auth/login' : '/auth/onboarding');
+  }
+
+  void _retry() {
+    setState(() => _offlineError = null);
+    _continue(_tryRestore());
   }
 
   @override
@@ -62,7 +86,21 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 const SizedBox(height: 6),
                 const Text('Office Management & Attendance', style: TextStyle(color: Colors.white70, fontSize: 14)),
                 const SizedBox(height: 40),
-                const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white54)),
+                if (_offlineError == null)
+                  const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white54))
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(_offlineError!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _retry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.teal),
+                  ),
+                ],
               ],
             ),
           ),

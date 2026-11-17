@@ -22,6 +22,9 @@ class MockAppRepository implements AppRepository {
   List<String> get ticketCategoryNames => const ['IT Support', 'HR Query', 'Facilities', 'Payroll', 'Other'];
 
   @override
+  String? get lastError => null;
+
+  @override
   Future<AppSnapshot> load() async {
     // Simulated network latency so shimmer loaders are visible.
     await Future<void>.delayed(const Duration(milliseconds: 1100));
@@ -87,4 +90,15 @@ class MockAppRepository implements AppRepository {
 
   @override
   Future<void> replyTicket(Ticket ticket, String text) async {}
+
+  /// Demo: settings live in memory for the session.
+  final Map<String, String> _companySettings = {};
+
+  @override
+  Future<Map<String, String>> loadCompanySettings() async => Map.of(_companySettings);
+
+  @override
+  Future<void> saveCompanySettings(Map<String, Object?> settings) async {
+    settings.forEach((k, v) => _companySettings[k] = '${v ?? ''}');
+  }
 }

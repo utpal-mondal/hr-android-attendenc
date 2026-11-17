@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:office_management/core/common.dart';
 
 import '../repositories/app_repository.dart';
+import '../repositories/mock_app_repository.dart';
 
 /// Holds all demo data and business rules.
 ///
@@ -11,6 +12,32 @@ class AppController extends ChangeNotifier {
   AppController(this._repo);
 
   final AppRepository _repo;
+
+  /// User-facing messages for writes the backend rejected. The app root shows
+  /// each one as an error snackbar; the local change has already been undone.
+  Stream<String> get writeErrors => _writeErrors.stream;
+  final _writeErrors = StreamController<String>.broadcast();
+
+  @override
+  void dispose() {
+    _writeErrors.close();
+    super.dispose();
+  }
+
+  /// Runs a repository write. On failure runs [undo] (to roll back the
+  /// optimistic local change), reports the error and returns false.
+  Future<bool> _persist(Future<void> Function() write, {void Function()? undo}) async {
+    try {
+      await write();
+      return true;
+    } catch (e) {
+      undo?.call();
+      final msg = e is RepoWriteException ? e.message : 'Something went wrong while saving. Please try again.';
+      if (!_writeErrors.isClosed) _writeErrors.add(msg);
+      notifyListeners();
+      return false;
+    }
+  }
 
   bool loading = false;
   bool loaded = false;
@@ -49,7 +76,7 @@ class AppController extends ChangeNotifier {
   Future<void> start(UserRole role) {
     _role = role;
     _meId = _repo.userIdFor(role);
-    return load();
+    return load(force: true);
   }
 
   void reset() {
@@ -58,15 +85,49 @@ class AppController extends ChangeNotifier {
     loaded = false;
     loading = false;
     error = null;
+    _loadedAt = null;
+    _loading = null;
+    _generation++; // results of a load still in flight are discarded
     notifyListeners();
   }
 
-  Future<void> load() async {
+  /// While data is younger than this, `load()` is a no-op — screens and
+  /// widget rebuilds can call it freely without hitting the network.
+  /// Pass `force: true` to always refetch (sign-in, manual refresh).
+  Duration dataFreshFor = const Duration(minutes: 2);
+
+  DateTime? _loadedAt;
+  Future<void>? _loading;
+
+  /// Bumped on [reset] so a load started for a previous session never
+  /// overwrites the data of the next one.
+  int _generation = 0;
+
+  Future<void> load({bool force = false}) {
+    // Single-flight: concurrent callers share one in-flight load.
+    final running = _loading;
+    if (running != null) return running;
+    if (!force &&
+        loaded &&
+        _loadedAt != null &&
+        DateTime.now().difference(_loadedAt!) < dataFreshFor) {
+      return Future.value();
+    }
+    final f = _load();
+    _loading = f;
+    return f.whenComplete(() {
+      if (identical(_loading, f)) _loading = null;
+    });
+  }
+
+  Future<void> _load() async {
+    final gen = _generation;
     loading = true;
     error = null;
     notifyListeners();
     try {
       final s = await _repo.load();
+      if (gen != _generation) return; // signed out meanwhile
       employees = s.employees;
       departments = s.departments;
       branches = s.branches;
@@ -87,7 +148,9 @@ class AppController extends ChangeNotifier {
       auditLogs = s.auditLogs;
       apiBalances = s.leaveBalances;
       loaded = true;
+      _loadedAt = DateTime.now();
     } catch (e) {
+      if (gen != _generation) return;
       error = 'Could not load data. Please check your connection and try again.';
     }
     loading = false;
@@ -201,63 +264,107 @@ class AppController extends ChangeNotifier {
         .toList();
   }
 
-  Future<void> checkIn() async {
-    final now = DateTime.now();
-    final e = me;
-    final shift = shiftOf(e);
-    final limit = DateTime(now.year, now.month, now.day, shift.startHour, shift.startMinute)
-        .add(Duration(minutes: shift.graceMinutes));
-    final rec = Attendance(
-      id: 'A-${e.id}-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}',
-      employeeId: e.id,
-      date: dateOnly(now),
-      status: now.isAfter(limit) ? AttendanceStatus.late : AttendanceStatus.present,
-      checkIn: now,
-      office: e.branch,
-    );
-    attendance.removeWhere((a) => a.id == rec.id);
-    attendance.add(rec);
-    await _repo.saveAttendance(rec);
-    _addNotification('Checked in', 'You checked in at ${Fmt.time(now)}.', 'attendance');
-    notifyListeners();
+  bool _punching = false;
+
+  /// Checks in for today. Returns false (and changes nothing) when the user
+  /// is already checked in / done for the day, a punch is still in progress,
+  /// or the server rejected it.
+  Future<bool> checkIn({PunchLocation? location}) async {
+    if (_punching || workState != WorkState.notStarted) return false;
+    _punching = true;
+    try {
+      final now = DateTime.now();
+      final e = me;
+      final shift = shiftOf(e);
+      final limit = DateTime(now.year, now.month, now.day, shift.startHour, shift.startMinute)
+          .add(Duration(minutes: shift.graceMinutes));
+      final rec = Attendance(
+        id: 'A-${e.id}-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}',
+        employeeId: e.id,
+        date: dateOnly(now),
+        status: now.isAfter(limit) ? AttendanceStatus.late : AttendanceStatus.present,
+        checkIn: now,
+        office: e.branch,
+      )..punchLocation = location;
+      final previous = attendance.where((a) => a.id == rec.id).toList();
+      attendance.removeWhere((a) => a.id == rec.id);
+      attendance.add(rec);
+      notifyListeners();
+      final ok = await _persist(() => _repo.saveAttendance(rec), undo: () {
+        attendance.remove(rec);
+        attendance.addAll(previous);
+      });
+      if (!ok) return false;
+      _addNotification('Checked in', 'You checked in at ${Fmt.time(now)}.', 'attendance');
+      notifyListeners();
+      return true;
+    } finally {
+      _punching = false;
+    }
   }
 
-  Future<void> startBreak() async {
+  Future<bool> startBreak() async {
     final a = myToday;
-    if (a == null || workState != WorkState.working) return;
-    a.breaks.add(AttendanceBreak(start: DateTime.now()));
-    await _repo.saveAttendance(a);
-    notifyListeners();
+    if (_punching || a == null || workState != WorkState.working) return false;
+    _punching = true;
+    try {
+      final b = AttendanceBreak(start: DateTime.now());
+      a.breaks.add(b);
+      notifyListeners();
+      return await _persist(() => _repo.saveAttendance(a), undo: () => a.breaks.remove(b));
+    } finally {
+      _punching = false;
+    }
   }
 
-  Future<void> endBreak() async {
+  Future<bool> endBreak() async {
     final a = myToday;
-    if (a == null || workState != WorkState.onBreak) return;
-    a.breaks.last.end = DateTime.now();
-    await _repo.saveAttendance(a);
-    notifyListeners();
+    if (_punching || a == null || workState != WorkState.onBreak) return false;
+    _punching = true;
+    try {
+      final b = a.breaks.last;
+      b.end = DateTime.now();
+      notifyListeners();
+      return await _persist(() => _repo.saveAttendance(a), undo: () => b.end = null);
+    } finally {
+      _punching = false;
+    }
   }
 
-  Future<void> checkOut() async {
+  Future<bool> checkOut({PunchLocation? location}) async {
     final a = myToday;
-    if (a == null || a.checkIn == null || a.checkOut != null) return;
-    final now = DateTime.now();
-    if (a.breaks.isNotEmpty && a.breaks.last.end == null) a.breaks.last.end = now;
-    a.checkOut = now;
-    await _repo.saveAttendance(a);
-    _addNotification('Checked out', 'Day completed - ${Fmt.duration(a.worked)} worked.', 'attendance');
-    notifyListeners();
+    if (_punching || a == null || a.checkIn == null || a.checkOut != null) return false;
+    _punching = true;
+    try {
+      final now = DateTime.now();
+      final openBreak = a.breaks.isNotEmpty && a.breaks.last.end == null ? a.breaks.last : null;
+      openBreak?.end = now;
+      a.checkOut = now;
+      a.punchLocation = location;
+      notifyListeners();
+      final ok = await _persist(() => _repo.saveAttendance(a), undo: () {
+        a.checkOut = null;
+        openBreak?.end = null;
+      });
+      if (!ok) return false;
+      _addNotification('Checked out', 'Day completed - ${Fmt.duration(a.worked)} worked.', 'attendance');
+      notifyListeners();
+      return true;
+    } finally {
+      _punching = false;
+    }
   }
 
-  /// Simulated QR scan: toggles between check-in and check-out.
-  Future<String> qrScan() async {
+  /// QR scan: toggles between check-in and check-out. Returns the message to
+  /// show, or null when the punch failed (the error is already reported).
+  Future<String?> qrScan({PunchLocation? location}) async {
     switch (workState) {
       case WorkState.notStarted:
-        await checkIn();
+        if (!await checkIn(location: location)) return null;
         return 'Checked in successfully at ${Fmt.time(myToday?.checkIn)}.';
       case WorkState.working:
       case WorkState.onBreak:
-        await checkOut();
+        if (!await checkOut(location: location)) return null;
         return 'Checked out successfully at ${Fmt.time(myToday?.checkOut)}.';
       case WorkState.completed:
         return 'Your attendance for today is already completed.';
@@ -320,7 +427,28 @@ class AppController extends ChangeNotifier {
     return used;
   }
 
-  Future<void> submitLeave({
+  static bool _overlaps(DateTime aFrom, DateTime aTo, DateTime bFrom, DateTime bTo) =>
+      !dateOnly(aFrom).isAfter(dateOnly(bTo)) && !dateOnly(bFrom).isAfter(dateOnly(aTo));
+
+  /// The user's pending/approved leave that overlaps [from]..[to], if any.
+  LeaveRequest? overlappingLeave(DateTime from, DateTime to) {
+    for (final l in leaves) {
+      if (l.employeeId == _meId && l.status != RequestStatus.rejected && _overlaps(l.from, l.to, from, to)) return l;
+    }
+    return null;
+  }
+
+  /// The user's pending/approved WFH request that overlaps [from]..[to], if any.
+  WFHRequest? overlappingWfh(DateTime from, DateTime to) {
+    for (final w in wfhRequests) {
+      if (w.employeeId == _meId && w.status != RequestStatus.rejected && _overlaps(w.from, w.to, from, to)) return w;
+    }
+    return null;
+  }
+
+  /// Submits a leave request. Returns false when it overlaps an existing
+  /// request or the server rejected it (an error has been reported).
+  Future<bool> submitLeave({
     required String type,
     required DateTime from,
     required DateTime to,
@@ -328,6 +456,10 @@ class AppController extends ChangeNotifier {
     required String reason,
     required bool attachment,
   }) async {
+    if (overlappingLeave(from, to) != null) {
+      _writeErrors.add('You already have a leave request for these dates.');
+      return false;
+    }
     final r = LeaveRequest(
       id: _newId('L'),
       employeeId: _meId,
@@ -340,20 +472,26 @@ class AppController extends ChangeNotifier {
       hasAttachment: attachment,
     );
     leaves.add(r);
-    await _repo.saveLeave(r);
+    if (!await _persist(() => _repo.saveLeave(r), undo: () => leaves.remove(r))) return false;
     _addNotification('Leave request submitted', '$type for ${r.days % 1 == 0 ? r.days.toInt() : r.days} day(s) is pending approval.', 'leave');
     notifyListeners();
+    return true;
   }
 
-  Future<void> submitWfh({required DateTime from, required DateTime to, required String reason}) async {
+  Future<bool> submitWfh({required DateTime from, required DateTime to, required String reason}) async {
+    if (overlappingWfh(from, to) != null) {
+      _writeErrors.add('You already have a work from home request for these dates.');
+      return false;
+    }
     final r = WFHRequest(id: _newId('W'), employeeId: _meId, from: from, to: to, reason: reason, appliedOn: DateTime.now());
     wfhRequests.add(r);
-    await _repo.saveWfh(r);
+    if (!await _persist(() => _repo.saveWfh(r), undo: () => wfhRequests.remove(r))) return false;
     _addNotification('WFH request submitted', 'Your work from home request is pending approval.', 'leave');
     notifyListeners();
+    return true;
   }
 
-  Future<void> submitRegularization({
+  Future<bool> submitRegularization({
     required DateTime date,
     required DateTime checkIn,
     required DateTime checkOut,
@@ -371,9 +509,10 @@ class AppController extends ChangeNotifier {
       hasAttachment: attachment,
     );
     regularizations.add(r);
-    await _repo.saveRegularization(r);
+    if (!await _persist(() => _repo.saveRegularization(r), undo: () => regularizations.remove(r))) return false;
     _addNotification('Regularization submitted', 'Your attendance correction is with your manager.', 'attendance');
     notifyListeners();
+    return true;
   }
 
   List<RegularizationRequest> regularizationsFor(String empId) {
@@ -443,27 +582,56 @@ class AppController extends ChangeNotifier {
   int pendingCount({Set<String>? employeeIds}) =>
       approvals(employeeIds: employeeIds).where((a) => a.status == RequestStatus.pending).length;
 
-  Future<void> reviewApproval(ApprovalItem item, RequestStatus status) async {
+  /// Approves or rejects a request. Returns false when the server rejected
+  /// the review (the local status is restored and an error is reported).
+  Future<bool> reviewApproval(ApprovalItem item, RequestStatus status) async {
+    final undo = <void Function()>[];
+    final ok = await _persist(() => _applyReview(item, status, undo), undo: () {
+      for (final u in undo.reversed) {
+        u();
+      }
+    });
+    if (!ok) return false;
+    final verb = status == RequestStatus.approved ? 'Approved' : 'Rejected';
+    _audit('$verb ${item.kind.label.toLowerCase()} request', '${nameOf(item.employeeId)} - ${item.title}',
+        status == RequestStatus.approved ? Icons.check_circle_outline : Icons.cancel_outlined);
+    notifyListeners();
+    return true;
+  }
+
+  Future<void> _applyReview(ApprovalItem item, RequestStatus status, List<void Function()> undo) async {
     switch (item.kind) {
       case ApprovalKind.leave:
         {
           final r = leaves.firstWhere((l) => l.id == item.id);
+          final prev = r.status;
           r.status = status;
+          undo.add(() => r.status = prev);
           await _repo.saveLeave(r);
         }
       case ApprovalKind.wfh:
         {
           final r = wfhRequests.firstWhere((w) => w.id == item.id);
+          final prev = r.status;
           r.status = status;
+          undo.add(() => r.status = prev);
           await _repo.saveWfh(r);
         }
       case ApprovalKind.regularization:
         {
         final r = regularizations.firstWhere((x) => x.id == item.id);
+        final prev = r.status;
         r.status = status;
+        undo.add(() => r.status = prev);
         if (status == RequestStatus.approved) {
           final existing = recordOn(r.employeeId, r.date);
           if (existing != null) {
+            final (oIn, oOut, oStatus, oNote) = (existing.checkIn, existing.checkOut, existing.status, existing.note);
+            undo.add(() => existing
+              ..checkIn = oIn
+              ..checkOut = oOut
+              ..status = oStatus
+              ..note = oNote);
             existing.checkIn = r.requestedIn;
             existing.checkOut = r.requestedOut;
             existing.status = AttendanceStatus.present;
@@ -482,16 +650,13 @@ class AppController extends ChangeNotifier {
               note: 'Regularized',
             );
             attendance.add(rec);
+            undo.add(() => attendance.remove(rec));
             await _repo.saveAttendance(rec);
           }
         }
         await _repo.saveRegularization(r);
         }
     }
-    final verb = status == RequestStatus.approved ? 'Approved' : 'Rejected';
-    _audit('$verb ${item.kind.label.toLowerCase()} request', '${nameOf(item.employeeId)} - ${item.title}',
-        status == RequestStatus.approved ? Icons.check_circle_outline : Icons.cancel_outlined);
-    notifyListeners();
   }
 
   // --------------------------------------------------------------- employees
@@ -529,18 +694,27 @@ class AppController extends ChangeNotifier {
       address: branch,
     );
     employees.add(e);
-    await _repo.saveEmployee(e, isNew: true);
+    try {
+      await _repo.saveEmployee(e, isNew: true);
+    } catch (err) {
+      // Rethrown so the Add Employee form stays open with the server message.
+      employees.remove(e);
+      notifyListeners();
+      throw err is RepoWriteException ? err : RepoWriteException('Could not add the employee. Please try again.');
+    }
     _audit('Added employee', '$name ($designation)', Icons.person_add_alt_outlined);
     notifyListeners();
     return e;
   }
 
-  Future<void> toggleEmployeeActive(Employee e) async {
+  Future<bool> toggleEmployeeActive(Employee e) async {
     e.active = !e.active;
-    await _repo.saveEmployee(e);
+    notifyListeners();
+    if (!await _persist(() => _repo.saveEmployee(e), undo: () => e.active = !e.active)) return false;
     _audit(e.active ? 'Activated employee' : 'Deactivated employee', e.name,
         e.active ? Icons.person_outline : Icons.person_off_outlined);
     notifyListeners();
+    return true;
   }
 
   // ------------------------------------------------------- organisation setup
@@ -548,16 +722,75 @@ class AppController extends ChangeNotifier {
   void addDepartment(String name, String head, String description) {
     final d = Department(id: _newId('D'), name: name, head: head, description: description);
     departments.add(d);
-    unawaited(_repo.saveDepartment(d, isNew: true));
-    _audit('Created department', name, Icons.account_tree_outlined);
+    final log = _audit('Created department', name, Icons.account_tree_outlined);
+    unawaited(_persist(() => _repo.saveDepartment(d, isNew: true), undo: () {
+      departments.remove(d);
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
-  void addBranch({required String name, required String city, required String address, required String hours}) {
-    final b = Branch(id: _newId('B'), name: name, city: city, address: address, workingHours: hours);
+  /// Sets (or clears, with nulls) a branch's office location / geofence.
+  Future<bool> setBranchLocation(Branch b, {double? latitude, double? longitude, int? radiusMeters}) async {
+    final (oLat, oLng, oRadius) = (b.latitude, b.longitude, b.geofenceRadiusMeters);
+    b
+      ..latitude = latitude
+      ..longitude = longitude
+      ..geofenceRadiusMeters = radiusMeters;
+    notifyListeners();
+    final ok = await _persist(() => _repo.saveBranch(b), undo: () {
+      b
+        ..latitude = oLat
+        ..longitude = oLng
+        ..geofenceRadiusMeters = oRadius;
+    });
+    if (ok) {
+      _audit(latitude == null ? 'Removed branch geofence' : 'Set branch geofence', b.name, Icons.location_on_outlined);
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  // ------------------------------------------------------ company settings
+
+  /// Loads organisation settings (Super Admin). Throws [RepoWriteException]
+  /// with a user-facing message when they can't be read.
+  Future<Map<String, String>> loadCompanySettings() => _repo.loadCompanySettings();
+
+  Future<bool> saveCompanySettings(Map<String, Object?> settings) async {
+    final ok = await _persist(() => _repo.saveCompanySettings(settings));
+    if (ok) {
+      _audit('Updated organisation settings', '${settings.length} setting(s)', Icons.settings_outlined);
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  void addBranch({
+    required String name,
+    required String city,
+    required String address,
+    required String hours,
+    double? latitude,
+    double? longitude,
+    int? radiusMeters,
+  }) {
+    final b = Branch(
+      id: _newId('B'),
+      name: name,
+      city: city,
+      address: address,
+      workingHours: hours,
+      latitude: latitude,
+      longitude: longitude,
+      geofenceRadiusMeters: radiusMeters,
+    );
     branches.add(b);
-    unawaited(_repo.saveBranch(b, isNew: true));
-    _audit('Created branch', name, Icons.apartment);
+    final log = _audit('Created branch', name, Icons.apartment);
+    unawaited(_persist(() => _repo.saveBranch(b, isNew: true), undo: () {
+      branches.remove(b);
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
@@ -571,6 +804,8 @@ class AppController extends ChangeNotifier {
     required int grace,
   }) {
     if (existing != null) {
+      final (oName, oSh, oSm, oEh, oEm, oGrace) =
+          (existing.name, existing.startHour, existing.startMinute, existing.endHour, existing.endMinute, existing.graceMinutes);
       existing
         ..name = name
         ..startHour = sh
@@ -578,13 +813,25 @@ class AppController extends ChangeNotifier {
         ..endHour = eh
         ..endMinute = em
         ..graceMinutes = grace;
-      unawaited(_repo.saveShift(existing));
-      _audit('Updated shift', name, Icons.schedule);
+      final log = _audit('Updated shift', name, Icons.schedule);
+      unawaited(_persist(() => _repo.saveShift(existing), undo: () {
+        existing
+          ..name = oName
+          ..startHour = oSh
+          ..startMinute = oSm
+          ..endHour = oEh
+          ..endMinute = oEm
+          ..graceMinutes = oGrace;
+        auditLogs.remove(log);
+      }));
     } else {
       final s = Shift(id: _newId('S'), name: name, startHour: sh, startMinute: sm, endHour: eh, endMinute: em, graceMinutes: grace);
       shifts.add(s);
-      unawaited(_repo.saveShift(s, isNew: true));
-      _audit('Created shift', name, Icons.schedule);
+      final log = _audit('Created shift', name, Icons.schedule);
+      unawaited(_persist(() => _repo.saveShift(s, isNew: true), undo: () {
+        shifts.remove(s);
+        auditLogs.remove(log);
+      }));
     }
     notifyListeners();
   }
@@ -593,15 +840,23 @@ class AppController extends ChangeNotifier {
     final h = Holiday(id: _newId('H'), date: date, name: name, type: type);
     holidays.add(h);
     holidays.sort((a, b) => a.date.compareTo(b.date));
-    unawaited(_repo.saveHoliday(h));
-    _audit('Added holiday', '$name (${Fmt.date(date)})', Icons.event_outlined);
+    final log = _audit('Added holiday', '$name (${Fmt.date(date)})', Icons.event_outlined);
+    unawaited(_persist(() => _repo.saveHoliday(h), undo: () {
+      holidays.remove(h);
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
   void removeHoliday(Holiday h) {
     holidays.removeWhere((x) => x.id == h.id);
-    unawaited(_repo.deleteHoliday(h));
-    _audit('Removed holiday', h.name, Icons.event_busy_outlined);
+    final log = _audit('Removed holiday', h.name, Icons.event_busy_outlined);
+    unawaited(_persist(() => _repo.deleteHoliday(h), undo: () {
+      holidays
+        ..add(h)
+        ..sort((a, b) => a.date.compareTo(b.date));
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
@@ -625,14 +880,24 @@ class AppController extends ChangeNotifier {
     required bool publish,
   }) {
     if (existing != null) {
+      final (oTitle, oBody, oCategory, oAudience, oPublished) =
+          (existing.title, existing.body, existing.category, existing.audience, existing.published);
       existing
         ..title = title
         ..body = body
         ..category = category
         ..audience = audience
         ..published = publish;
-      unawaited(_repo.saveAnnouncement(existing));
-      _audit('Edited announcement', title, Icons.edit_outlined);
+      final log = _audit('Edited announcement', title, Icons.edit_outlined);
+      unawaited(_persist(() => _repo.saveAnnouncement(existing), undo: () {
+        existing
+          ..title = oTitle
+          ..body = oBody
+          ..category = oCategory
+          ..audience = oAudience
+          ..published = oPublished;
+        auditLogs.remove(log);
+      }));
     } else {
       final a = Announcement(
         id: _newId('AN'),
@@ -645,16 +910,24 @@ class AppController extends ChangeNotifier {
         published: publish,
       );
       announcements.add(a);
-      unawaited(_repo.saveAnnouncement(a, isNew: true));
-      _audit(publish ? 'Published announcement' : 'Saved announcement draft', title, Icons.campaign_outlined);
+      final log = _audit(publish ? 'Published announcement' : 'Saved announcement draft', title, Icons.campaign_outlined);
+      unawaited(_persist(() => _repo.saveAnnouncement(a, isNew: true), undo: () {
+        announcements.remove(a);
+        auditLogs.remove(log);
+      }));
     }
     notifyListeners();
   }
 
   void togglePublish(Announcement a) {
     a.published = !a.published;
-    if (a.published) unawaited(_repo.publishAnnouncement(a));
-    _audit(a.published ? 'Published announcement' : 'Unpublished announcement', a.title, Icons.campaign_outlined);
+    final log = _audit(a.published ? 'Published announcement' : 'Unpublished announcement', a.title, Icons.campaign_outlined);
+    if (a.published) {
+      unawaited(_persist(() => _repo.publishAnnouncement(a), undo: () {
+        a.published = false;
+        auditLogs.remove(log);
+      }));
+    }
     notifyListeners();
   }
 
@@ -669,16 +942,22 @@ class AppController extends ChangeNotifier {
   int get unreadCount => notifications.where((n) => !n.read).length;
 
   void markRead(AppNotification n) {
+    if (n.read) return;
     n.read = true;
-    unawaited(_repo.markNotificationRead(n));
+    unawaited(_persist(() => _repo.markNotificationRead(n), undo: () => n.read = false));
     notifyListeners();
   }
 
   void markAllRead() {
-    for (final n in notifications) {
+    final unread = notifications.where((n) => !n.read).toList();
+    for (final n in unread) {
       n.read = true;
     }
-    unawaited(_repo.markAllNotificationsRead());
+    unawaited(_persist(() => _repo.markAllNotificationsRead(), undo: () {
+      for (final n in unread) {
+        n.read = false;
+      }
+    }));
     notifyListeners();
   }
 
@@ -697,9 +976,13 @@ class AppController extends ChangeNotifier {
   }
 
   void deleteDocument(DocumentItem d) {
+    final index = documents.indexWhere((x) => x.id == d.id);
     documents.removeWhere((x) => x.id == d.id);
-    unawaited(_repo.deleteDocument(d));
-    _audit('Deleted document', d.title, Icons.delete_outline);
+    final log = _audit('Deleted document', d.title, Icons.delete_outline);
+    unawaited(_persist(() => _repo.deleteDocument(d), undo: () {
+      documents.insert(index < 0 ? 0 : index.clamp(0, documents.length), d);
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
@@ -730,16 +1013,23 @@ class AppController extends ChangeNotifier {
       notes: notes,
     );
     expenses.add(e);
-    unawaited(_repo.saveExpense(e, isNew: true));
-    _addNotification('Expense claim submitted', '$title - ${Fmt.money(amount)} is pending approval.', 'system');
+    unawaited(_persist(() => _repo.saveExpense(e, isNew: true), undo: () => expenses.remove(e)).then((ok) {
+      if (!ok) return;
+      _addNotification('Expense claim submitted', '$title - ${Fmt.money(amount)} is pending approval.', 'system');
+      notifyListeners();
+    }));
     notifyListeners();
   }
 
   void reviewExpense(Expense e, String status) {
+    final prev = e.status;
     e.status = status;
-    unawaited(_repo.saveExpense(e));
-    _audit('$status expense claim', '${nameOf(e.employeeId)} - ${e.title}',
+    final log = _audit('$status expense claim', '${nameOf(e.employeeId)} - ${e.title}',
         status == 'Rejected' ? Icons.cancel_outlined : Icons.check_circle_outline);
+    unawaited(_persist(() => _repo.saveExpense(e), undo: () {
+      e.status = prev;
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
@@ -750,26 +1040,42 @@ class AppController extends ChangeNotifier {
   void addAsset({required String name, required String type, required String serial}) {
     final a = Asset(id: _newId('AS'), name: name, type: type, serial: serial);
     assets.add(a);
-    unawaited(_repo.saveAsset(a, isNew: true));
-    _audit('Added asset', '$name ($serial)', Icons.inventory_2_outlined);
+    final log = _audit('Added asset', '$name ($serial)', Icons.inventory_2_outlined);
+    unawaited(_persist(() => _repo.saveAsset(a, isNew: true), undo: () {
+      assets.remove(a);
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
   void assignAsset(Asset a, String? empId) {
+    final (oTo, oStatus, oOn) = (a.assignedTo, a.status, a.assignedOn);
     a.assignedTo = empId;
     a.status = empId == null ? 'Available' : 'Assigned';
     a.assignedOn = empId == null ? null : DateTime.now();
-    unawaited(_repo.assignAsset(a, empId));
-    _audit(empId == null ? 'Unassigned asset' : 'Assigned asset',
+    final log = _audit(empId == null ? 'Unassigned asset' : 'Assigned asset',
         empId == null ? a.name : '${a.name} to ${nameOf(empId)}', Icons.laptop_mac);
+    unawaited(_persist(() => _repo.assignAsset(a, empId), undo: () {
+      a
+        ..assignedTo = oTo
+        ..status = oStatus
+        ..assignedOn = oOn;
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
   void setAssetStatus(Asset a, String status) {
+    final (oTo, oStatus) = (a.assignedTo, a.status);
     a.status = status;
     if (status != 'Assigned') a.assignedTo = null;
-    unawaited(_repo.saveAsset(a));
-    _audit('Updated asset status', '${a.name} - $status', Icons.build_outlined);
+    final log = _audit('Updated asset status', '${a.name} - $status', Icons.build_outlined);
+    unawaited(_persist(() => _repo.saveAsset(a), undo: () {
+      a
+        ..assignedTo = oTo
+        ..status = oStatus;
+      auditLogs.remove(log);
+    }));
     notifyListeners();
   }
 
@@ -792,15 +1098,17 @@ class AppController extends ChangeNotifier {
     );
     t.messages.add(TicketMessage(fromMe: true, sender: me.name, text: message, time: DateTime.now()));
     tickets.add(t);
-    unawaited(_repo.saveTicket(t, isNew: true));
+    unawaited(_persist(() => _repo.saveTicket(t, isNew: true), undo: () => tickets.remove(t)));
     notifyListeners();
   }
 
   void replyTicket(Ticket t, String text) {
-    t.messages.add(TicketMessage(fromMe: true, sender: me.name, text: text, time: DateTime.now()));
-    unawaited(_repo.replyTicket(t, text));
+    final msg = TicketMessage(fromMe: true, sender: me.name, text: text, time: DateTime.now());
+    t.messages.add(msg);
+    unawaited(_persist(() => _repo.replyTicket(t, text), undo: () => t.messages.remove(msg)));
     notifyListeners();
-    // Simulated support agent reply.
+    // Simulated support agent reply (demo mode only).
+    if (_repo is! MockAppRepository) return;
     Future<void>.delayed(const Duration(seconds: 2), () {
       t.messages.add(TicketMessage(
         fromMe: false,
@@ -870,8 +1178,9 @@ class AppController extends ChangeNotifier {
 
   // ------------------------------------------------------------------- audit
 
-  void _audit(String action, String target, IconData icon) {
-    auditLogs.insert(
-        0, AuditLog(id: _newId('AU'), time: DateTime.now(), actor: me.name, action: action, target: target, icon: icon));
+  AuditLog _audit(String action, String target, IconData icon) {
+    final log = AuditLog(id: _newId('AU'), time: DateTime.now(), actor: me.name, action: action, target: target, icon: icon);
+    auditLogs.insert(0, log);
+    return log;
   }
 }

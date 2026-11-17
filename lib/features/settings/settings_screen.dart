@@ -1,4 +1,5 @@
 import 'package:office_management/core/common.dart';
+import '../../data/api/office_api_client.dart' hide Json;
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -24,34 +25,66 @@ class SettingsScreen extends StatelessWidget {
     final current = TextEditingController();
     final next = TextEditingController();
     final confirm = TextEditingController();
+    final api = context.read<AuthController>().api;
+    var busy = false;
+    var showCur = false, showNext = false, showConfirm = false;
     showAppSheet<void>(
       context,
-      builder: (ctx) => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Form(
-          key: formKey,
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Change password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 16),
-            AppTextField(label: 'Current password', controller: current, obscure: true, validator: (v) => (v == null || v.isEmpty) ? 'Required' : null),
-            const SizedBox(height: 14),
-            AppTextField(label: 'New password', controller: next, obscure: true, validator: (v) => (v == null || v.length < 8) ? 'Use at least 8 characters' : null),
-            const SizedBox(height: 14),
-            AppTextField(label: 'Confirm new password', controller: confirm, obscure: true, validator: (v) => v != next.text ? 'Passwords do not match' : null),
-            const SizedBox(height: 20),
-            AppButton(
-              label: 'Update password',
-              expand: true,
-              onPressed: () {
-                if (!formKey.currentState!.validate()) return;
-                Navigator.pop(ctx);
-                showAppSnack(context, 'Password updated (demo).');
-              },
-            ),
-          ]),
-        ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          Widget eye(bool visible, VoidCallback toggle) => IconButton(
+                icon: Icon(visible ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20, color: AppColors.textSecondary),
+                onPressed: toggle,
+              );
+          return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Form(
+            key: formKey,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Change password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 16),
+              AppTextField(label: 'Current password', controller: current, obscure: !showCur, suffix: eye(showCur, () => setS(() => showCur = !showCur)), validator: (v) => (v == null || v.isEmpty) ? 'Required' : null),
+              const SizedBox(height: 14),
+              AppTextField(label: 'New password', controller: next, obscure: !showNext, suffix: eye(showNext, () => setS(() => showNext = !showNext)), validator: (v) => (v == null || v.length < 8) ? 'Use at least 8 characters' : null),
+              const SizedBox(height: 14),
+              AppTextField(label: 'Confirm new password', controller: confirm, obscure: !showConfirm, suffix: eye(showConfirm, () => setS(() => showConfirm = !showConfirm)), validator: (v) => v != next.text ? 'Passwords do not match' : null),
+              const SizedBox(height: 20),
+              AppButton(
+                label: 'Update password',
+                expand: true,
+                loading: busy,
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  if (api == null) {
+                    Navigator.pop(ctx);
+                    showAppSnack(context, 'Password updated (demo).');
+                    return;
+                  }
+                  setS(() => busy = true);
+                  try {
+                    await api.changePassword(
+                      currentPassword: current.text,
+                      newPassword: next.text,
+                      confirmation: confirm.text,
+                    );
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    showAppSnack(context, 'Password updated. Use the new password next time you sign in.');
+                  } catch (e) {
+                    if (!ctx.mounted) return;
+                    setS(() => busy = false);
+                    showAppSnack(ctx, e is ApiException ? e.message : 'Could not update the password. Please try again.', error: true);
+                  }
+                },
+              ),
+            ]),
+          ),
+        );
+        },
       ),
     );
+    // The three controllers are left to the GC: disposing them when the sheet
+    // future completes would race the sheet's closing animation.
   }
 
   @override
@@ -90,10 +123,8 @@ class SettingsScreen extends StatelessWidget {
               _switch('Attendance reminders', 'Remind me to check in and out', auth.attendanceReminders, (v) => auth.update(() => auth.attendanceReminders = v)),
             ]),
             _section('Security', [
-              _switch('Biometric lock', 'Require fingerprint / face to open the app', auth.biometricLock, (v) => auth.update(() => auth.biometricLock = v)),
-              const Divider(),
-              _switch('Two-factor authentication', 'Extra verification at sign in', auth.twoFactor, (v) => auth.update(() => auth.twoFactor = v)),
-              const Divider(),
+              // Biometric lock / two-factor switches were removed: they were not
+              // implemented, and a security toggle that does nothing misleads users.
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.lock_outline, color: AppColors.teal),
@@ -132,7 +163,12 @@ class SettingsScreen extends StatelessWidget {
               ),
             ]),
             _section('About', [
-              const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.info_outline, color: AppColors.teal), title: Text('OfficeHub demo'), subtitle: Text('Version 1.0.0 - static demo data')),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.info_outline, color: AppColors.teal),
+                title: Text(auth.isApiMode ? 'OfficeHub' : 'OfficeHub demo'),
+                subtitle: Text(auth.isApiMode ? 'Version 1.0.0' : 'Version 1.0.0 - static demo data'),
+              ),
               if (app.role == UserRole.employee) ...[
                 const Divider(),
                 ListTile(

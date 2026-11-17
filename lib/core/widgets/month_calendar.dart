@@ -39,14 +39,19 @@ class MonthCalendar extends StatelessWidget {
           children: [
             IconButton(
               icon: const Icon(Icons.chevron_left),
-              onPressed: () => onMonthChanged(DateTime(month.year, month.month - 1, 1)),
+              onPressed: () =>
+                  onMonthChanged(DateTime(month.year, month.month - 1, 1)),
             ),
             Expanded(
-              child: Text(Fmt.monthYear(month), textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              child: Text(Fmt.monthYear(month),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             IconButton(
               icon: const Icon(Icons.chevron_right),
-              onPressed: () => onMonthChanged(DateTime(month.year, month.month + 1, 1)),
+              onPressed: () =>
+                  onMonthChanged(DateTime(month.year, month.month + 1, 1)),
             ),
           ],
         ),
@@ -54,7 +59,13 @@ class MonthCalendar extends StatelessWidget {
         Row(
           children: [
             for (final l in labels)
-              Expanded(child: Center(child: Text(l, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+              Expanded(
+                  child: Center(
+                      child: Text(l,
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary)))),
           ],
         ),
         const SizedBox(height: 6),
@@ -62,7 +73,8 @@ class MonthCalendar extends StatelessWidget {
           Row(
             children: [
               for (var c = 0; c < 7; c++)
-                Expanded(child: _cell(r * 7 + c - lead + 1, daysInMonth, today)),
+                Expanded(
+                    child: _cell(r * 7 + c - lead + 1, daysInMonth, today)),
             ],
           ),
       ],
@@ -85,32 +97,46 @@ class MonthCalendar extends StatelessWidget {
           onTap: onSelect == null ? null : () => onSelect!(date),
           child: Container(
             decoration: BoxDecoration(
-              color: fill?.withValues(alpha:0.14),
+              color: fill?.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(10),
               border: isSel
                   ? Border.all(color: AppColors.navy, width: 1.6)
-                  : (isToday ? Border.all(color: AppColors.teal, width: 1.2) : null),
+                  : (isToday
+                      ? Border.all(color: AppColors.teal, width: 1.2)
+                      : null),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('$dayNum',
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: isToday || isSel ? FontWeight.w800 : FontWeight.w500,
-                      color: fill ?? AppColors.textPrimary,
-                    )),
-                if (markers.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final m in markers.take(3))
-                        Container(margin: const EdgeInsets.symmetric(horizontal: 1.5), width: 5, height: 5, decoration: BoxDecoration(color: m, shape: BoxShape.circle)),
-                    ],
-                  ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('$dayNum',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: isToday || isSel
+                            ? FontWeight.w800
+                            : FontWeight.w500,
+                        color: fill ?? AppColors.textPrimary,
+                      )),
+                  if (markers.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final m in markers.take(3))
+                          Container(
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 1.5),
+                              width: 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                  color: m, shape: BoxShape.circle)),
+                      ],
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),

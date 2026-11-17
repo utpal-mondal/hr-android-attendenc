@@ -1,4 +1,4 @@
-package com.example.office_management
+package com.matainja.hr
 
 import io.flutter.embedding.android.FlutterActivity
 

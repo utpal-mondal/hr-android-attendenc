@@ -35,9 +35,10 @@ class _LiveDurationState extends State<LiveDuration> {
 
 Future<void> doCheckIn(BuildContext context) async {
   final app = context.read<AppController>();
-  final ok = await runLocationVerification(context, office: app.me.branch);
-  if (!ok || !context.mounted) return;
-  await app.checkIn();
+  if (app.workState != WorkState.notStarted) return; // double tap
+  final location = await runLocationVerification(context, office: app.me.branch);
+  if (location == null || !context.mounted) return;
+  if (!await app.checkIn(location: location)) return; // error already shown
   if (!context.mounted) return;
   final a = app.myToday;
   await showSuccessDialog(
@@ -58,7 +59,9 @@ Future<void> doCheckOut(BuildContext context) async {
     destructive: true,
   );
   if (!ok || !context.mounted) return;
-  await app.checkOut();
+  final location = await runLocationVerification(context, office: app.me.branch);
+  if (location == null || !context.mounted) return;
+  if (!await app.checkOut(location: location)) return; // error already shown
   if (!context.mounted) return;
   final r = app.myToday;
   await showSuccessDialog(
@@ -109,17 +112,27 @@ class WorkStatusPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha:0.12), borderRadius: BorderRadius.circular(20)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                  const SizedBox(width: 7),
-                  Text(label, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                ]),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha:0.12), borderRadius: BorderRadius.circular(20)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                    const SizedBox(width: 7),
+                    Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600))),
+                  ]),
+                ),
               ),
-              const Spacer(),
-              Text(Fmt.fullDate(DateTime.now()).split(',').last.trim(), style: const TextStyle(color: Colors.white60, fontSize: 12.5)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  Fmt.fullDate(DateTime.now()).split(',').last.trim(),
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white60, fontSize: 12.5),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -185,21 +198,21 @@ class WorkStatusPanel extends StatelessWidget {
       case WorkState.notStarted:
         return Wrap(spacing: 10, runSpacing: 10, children: [
           _light('Check In', Icons.login_rounded, () => doCheckIn(context)),
-          _ghost('Scan QR', Icons.qr_code_scanner, () => context.push('/employee/attendance/qr')),
+          // QR scanning is simulated, so it is only offered in the demo build.
+          if (!context.read<AuthController>().isApiMode)
+            _ghost('Scan QR', Icons.qr_code_scanner, () => context.push('/employee/attendance/qr')),
         ]);
       case WorkState.working:
         return Wrap(spacing: 10, runSpacing: 10, children: [
-          _light('Start Break', Icons.free_breakfast_outlined, () {
-            app.startBreak();
-            showAppSnack(context, 'Break started. Enjoy!');
+          _light('Start Break', Icons.free_breakfast_outlined, () async {
+            if (await app.startBreak() && context.mounted) showAppSnack(context, 'Break started. Enjoy!');
           }),
           _ghost('Check Out', Icons.logout_rounded, () => doCheckOut(context), danger: true),
         ]);
       case WorkState.onBreak:
         return Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          _light('End Break', Icons.play_arrow_rounded, () {
-            app.endBreak();
-            showAppSnack(context, 'Welcome back! Status: Working');
+          _light('End Break', Icons.play_arrow_rounded, () async {
+            if (await app.endBreak() && context.mounted) showAppSnack(context, 'Welcome back! Status: Working');
           }),
           LiveDuration(
             compute: () => app.myToday?.breaks.last.duration ?? Duration.zero,

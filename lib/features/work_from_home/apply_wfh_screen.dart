@@ -28,12 +28,16 @@ class _ApplyWfhScreenState extends State<ApplyWfhScreen> {
       showAppSnack(context, 'End date cannot be before the start date.', error: true);
       return;
     }
-    setState(() => _busy = true);
     final app = context.read<AppController>();
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    await app.submitWfh(from: from, to: to, reason: _reason.text.trim());
+    if (app.overlappingWfh(from, to) != null) {
+      showAppSnack(context, 'You already have a work from home request for these dates.', error: true);
+      return;
+    }
+    setState(() => _busy = true);
+    final ok = await app.submitWfh(from: from, to: to, reason: _reason.text.trim());
     if (!mounted) return;
     setState(() => _busy = false);
+    if (!ok) return; // error already shown
     await showSuccessDialog(context, title: 'Request submitted', message: 'Your work from home request was sent to your manager.');
     if (mounted) context.pop();
   }
