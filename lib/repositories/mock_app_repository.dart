@@ -32,6 +32,12 @@ class MockAppRepository implements AppRepository {
   }
 
   @override
+  Future<({List<Department> departments, List<Branch> branches, List<Shift> shifts})> loadOrgLookups() async {
+    final s = MockData.build();
+    return (departments: s.departments, branches: s.branches, shifts: s.shifts);
+  }
+
+  @override
   Future<void> saveEmployee(Employee employee, {bool isNew = false}) async {}
 
   @override
@@ -75,6 +81,24 @@ class MockAppRepository implements AppRepository {
 
   @override
   Future<void> deleteDocument(DocumentItem document) async {}
+
+  @override
+  Future<DocumentItem> uploadDocument({required String title, required String category, required String filename, required List<int> bytes}) async {
+    final ext = filename.contains('.') ? filename.split('.').last.toUpperCase() : 'FILE';
+    final kb = (bytes.length / 1024).ceil();
+    return DocumentItem(
+      id: 'DOC${DateTime.now().millisecondsSinceEpoch}',
+      title: title,
+      category: category,
+      updated: DateTime.now(),
+      size: kb >= 1024 ? '${(kb / 1024).toStringAsFixed(1)} MB' : '$kb KB',
+      extension: ext,
+    );
+  }
+
+  @override
+  Future<void> downloadDocument(DocumentItem document, String savePath) async =>
+      throw RepoWriteException('Downloads need the live server (the demo has no files).');
 
   @override
   Future<void> saveExpense(Expense expense, {bool isNew = false}) async {}

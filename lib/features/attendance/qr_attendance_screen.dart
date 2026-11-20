@@ -23,7 +23,7 @@ class _QrAttendanceScreenState extends State<QrAttendanceScreen> with SingleTick
     await Future<void>.delayed(const Duration(milliseconds: 1600));
     if (!mounted) return;
     final app = context.read<AppController>();
-    final location = await runLocationVerification(context, office: app.me.branch);
+    final location = await runLocationVerification(context, office: app.me.branch, wfh: app.isMyWfhToday);
     if (!mounted) return;
     if (location == null) {
       setState(() => _scanning = false);

@@ -85,6 +85,11 @@ abstract class AppRepository {
 
   Future<AppSnapshot> load();
 
+  /// Refetches only the organisation lookups (departments, branches, shifts)
+  /// used by the Add Employee form. Unlike [load], errors are thrown so the
+  /// form can show them instead of silently rendering empty dropdowns.
+  Future<({List<Department> departments, List<Branch> branches, List<Shift> shifts})> loadOrgLookups();
+
   // Write-side hooks. The mock implementation is a no-op because the
   // controller keeps local state; the API implementation POSTs/PUTs here and
   // throws [RepoWriteException] when the write fails.
@@ -110,6 +115,13 @@ abstract class AppRepository {
 
   // Documents, expenses, assets, helpdesk.
   Future<void> deleteDocument(DocumentItem document);
+
+  /// Uploads a company document (visible to all staff) and returns it as
+  /// stored by the server. Mock: returns a local item.
+  Future<DocumentItem> uploadDocument({required String title, required String category, required String filename, required List<int> bytes});
+
+  /// Downloads a document to [savePath]. Mock: throws (nothing to download).
+  Future<void> downloadDocument(DocumentItem document, String savePath);
   Future<void> saveExpense(Expense expense, {bool isNew});
   Future<void> saveAsset(Asset asset, {bool isNew});
   Future<void> assignAsset(Asset asset, String? employeeId);

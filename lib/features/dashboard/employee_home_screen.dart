@@ -28,6 +28,8 @@ class EmployeeHomeScreen extends StatelessWidget {
         final balances = app.balancesFor(app.me.id);
         final leaveLeft = balances.fold<double>(0, (a, b) => a + b.remaining);
         final shift = app.shiftOf(app.me);
+        // QR scan and payslips only exist in the demo build (no API yet).
+        final demo = !context.read<AuthController>().isApiMode;
         final meetings = app.upcomingMeetings.take(3).toList();
         final news = app.publishedAnnouncements.take(3).toList();
         final pending = app.leavesFor(app.me.id).where((l) => l.status == RequestStatus.pending).length +
@@ -52,8 +54,9 @@ class EmployeeHomeScreen extends StatelessWidget {
               _Quick(Icons.event_available_outlined, 'Apply leave', AppColors.purple, () => context.push('/employee/leave/apply')),
               _Quick(Icons.home_work_outlined, 'Request WFH', AppColors.info, () => context.push('/employee/wfh/apply')),
               _Quick(Icons.edit_calendar_outlined, 'Regularize', AppColors.warning, () => context.push('/employee/attendance/regularization')),
-              _Quick(Icons.qr_code_scanner, 'QR scan', AppColors.teal, () => context.push('/employee/attendance/qr')),
-              _Quick(Icons.payments_outlined, 'Payslips', AppColors.success, () => context.go('/employee/payslips')),
+              if (demo) _Quick(Icons.qr_code_scanner, 'QR scan', AppColors.teal, () => context.push('/employee/attendance/qr')),
+              if (demo) _Quick(Icons.payments_outlined, 'Payslips', AppColors.success, () => context.go('/employee/payslips')),
+              _Quick(Icons.folder_outlined, 'Documents', AppColors.teal, () => context.go('/employee/documents')),
               _Quick(Icons.support_agent, 'Helpdesk', AppColors.orange, () => context.go('/employee/helpdesk')),
             ]),
           ],

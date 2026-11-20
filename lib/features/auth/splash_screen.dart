@@ -22,8 +22,16 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<bool?> _tryRestore() async {
+    // Grab the controllers now: a successful restore makes the router leave
+    // this screen at once, so it may be unmounted by the time we continue.
+    final auth = context.read<AuthController>();
+    final app = context.read<AppController>();
     try {
-      return await context.read<AuthController>().restoreSession();
+      final restored = await auth.restoreSession();
+      // Start loading the data right away (not after the splash delay); the
+      // home page shows its loading shimmer until it arrives.
+      if (restored && auth.role != null) app.start(auth.role!);
+      return restored;
     } catch (e) {
       return null; // unreachable server: keep the token, offer a retry
     }
@@ -41,10 +49,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         setState(() => _offlineError = 'Cannot reach the server. Check your internet connection and try again.');
         return;
       }
-      if (restored) {
-        context.read<AppController>().start(auth.role!);
-        return;
-      }
+      if (restored) return; // data load already started in _tryRestore
     }
     await auth.loadPreferences();
     if (!mounted) return;

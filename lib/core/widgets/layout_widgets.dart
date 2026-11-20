@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/app_controller.dart';
+import '../../controllers/auth_controller.dart';
 import '../theme/app_colors.dart';
 import '../utils/responsive.dart';
 import 'account_menu.dart';
@@ -38,6 +39,16 @@ class PageScaffold extends StatelessWidget {
     final mobile = Responsive.isMobile(context);
     final canPop = Navigator.of(context).canPop();
     final pad = padding ?? EdgeInsets.fromLTRB(mobile ? 16 : 28, mobile ? 16 : 20, mobile ? 16 : 28, 32);
+
+    // Safety net: signed in but the data load was never started (e.g. the
+    // session was restored while the splash screen was being replaced).
+    final auth = context.read<AuthController>();
+    if (!app.loaded && !app.loading && app.error == null && app.role == null && auth.role != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final role = auth.role;
+        if (app.role == null && !app.loading && role != null) app.start(role);
+      });
+    }
 
     Widget body;
     if (app.error != null) {
@@ -186,10 +197,15 @@ class ScrollableTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppTableCard(
-      child: SingleChildScrollView(
+      // Fill the card's own width (not the window's, which ignores sidebars),
+      // and scroll sideways only when the columns genuinely need more room.
+      child: LayoutBuilder(
+        builder: (context, box) => SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: ConstrainedBox(
-          constraints: BoxConstraints(minWidth: (MediaQuery.sizeOf(context).width - 56).clamp(300.0, 1200.0).toDouble()),
+          constraints: BoxConstraints(
+            minWidth: box.maxWidth.isFinite ? box.maxWidth : (MediaQuery.sizeOf(context).width - 56).clamp(300.0, 1200.0).toDouble(),
+          ),
           child: DataTable(
             columnSpacing: columnSpacing,
             headingRowColor: WidgetStateProperty.all(const Color(0xFFF9FAFB)),
@@ -200,6 +216,7 @@ class ScrollableTable extends StatelessWidget {
               for (final r in rows) DataRow(cells: [for (final c in r) DataCell(c)]),
             ],
           ),
+        ),
         ),
       ),
     );

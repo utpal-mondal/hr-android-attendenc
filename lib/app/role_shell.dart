@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/app_controller.dart';
+import '../controllers/auth_controller.dart';
 import '../core/theme/app_colors.dart';
 import '../core/utils/responsive.dart';
 import '../core/widgets/widgets.dart';
@@ -20,7 +21,9 @@ class RoleShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = NavConfig.forRole(role);
+    // Payslips has no backend endpoint yet, so the live app hides it.
+    final apiMode = context.read<AuthController>().isApiMode;
+    final items = NavConfig.forRole(role).where((i) => !apiMode || !NavConfig.demoOnlyPaths.contains(i.path)).toList();
     final width = Responsive.width(context);
 
     if (width < 600) {

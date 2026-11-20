@@ -57,6 +57,7 @@ String _title(String v) =>
 AttendanceStatus attendanceStatusOf(String? v) => switch (v) {
       'present' => AttendanceStatus.present,
       'late' => AttendanceStatus.late,
+      'wfh' => AttendanceStatus.wfh,
       'half_day' => AttendanceStatus.halfDay,
       'on_leave' => AttendanceStatus.leave,
       'holiday' || 'weekly_off' => AttendanceStatus.holiday,
@@ -191,6 +192,24 @@ Attendance attendanceFromJson(
     breaks: breaks ?? const [],
     office: office,
     note: str(j['source']) == 'correction' ? 'Regularized' : null,
+  )
+    ..checkInLocation = punchLocationFromJson(asMap(j['check_in_location']))
+    ..checkOutLocation = punchLocationFromJson(asMap(j['check_out_location']));
+}
+
+/// `check_in_location` / `check_out_location` objects on attendance rows.
+PunchLocation? punchLocationFromJson(Json? j) {
+  if (j == null) return null;
+  final lat = double.tryParse('${j['latitude']}');
+  final lng = double.tryParse('${j['longitude']}');
+  if (lat == null || lng == null) return null;
+  final office = str(j['office_name']);
+  return PunchLocation(
+    latitude: lat,
+    longitude: lng,
+    accuracyMeters: intOrNull(j['accuracy_meters']) ?? 0,
+    distanceFromOfficeMeters: intOrNull(j['distance_from_office_meters']),
+    officeName: office.isEmpty ? null : office,
   );
 }
 

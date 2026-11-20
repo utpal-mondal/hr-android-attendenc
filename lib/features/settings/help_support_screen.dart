@@ -4,12 +4,12 @@ class HelpSupportScreen extends StatelessWidget {
   const HelpSupportScreen({super.key});
 
   static const _faqs = [
-    ('How do I check in?', 'Open Home or Attendance and tap Check In. The app reads your phone\'s GPS location and the server checks it against your office geofence before marking you present. Allow location access when asked.'),
+    ('How do I check in?', 'Open Home or Attendance and tap Check In. The app reads your phone\'s GPS location; on office days you must be at your office to check in. Allow location access when asked.'),
+    ('How does work from home work?', 'Every Wednesday is a work-from-home day for everyone: you can check in and out from any location. For other days, send a WFH request; once your manager approves it you can check in from anywhere on those days.'),
     ('What if I forgot to check out?', 'Submit a regularization request from Attendance > Regularization. Your manager will review and approve it, after which your record is corrected.'),
     ('How is a late arrival calculated?', 'Checking in after your shift start time plus the grace period (usually 15 minutes) marks the day as Late.'),
-    ('How many WFH days can I take?', 'Up to 6 days per calendar month, subject to manager approval.'),
-    ('Where can I download my payslip?', 'Go to Payslips, open any month and tap Download PDF.'),
     ('Who approves my leave?', 'Your reporting manager approves leave. HR can view all requests and policies.'),
+    ('Why does the app need my location?', 'Only to record where you check in and check out. Location is read when you tap Check In or Check Out, never in the background.'),
   ];
 
   @override
@@ -22,11 +22,7 @@ class HelpSupportScreen extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ResponsiveGrid(minTileWidth: 220, spacing: 12, children: [
-              _contact(context, Icons.mail_outline, 'Email HR', 'hr@nexora.demo'),
-              _contact(context, Icons.call_outlined, 'IT helpdesk', '+91 33 4000 1100'),
-              _contact(context, Icons.support_agent, 'Open a ticket', 'Track in Helpdesk', onTap: () => context.go('/employee/helpdesk')),
-            ]),
+            _contact(context, Icons.support_agent, 'Need help? Open a ticket', 'HR and IT reply in Helpdesk', onTap: () => context.go('/employee/helpdesk')),
             const Gap(22),
             const SectionHeader(title: 'Frequently asked questions'),
             AppCard(
@@ -55,8 +51,8 @@ class HelpSupportScreen extends StatelessWidget {
     );
   }
 
-  Widget _contact(BuildContext context, IconData icon, String title, String sub, {VoidCallback? onTap}) => AppCard(
-        onTap: onTap ?? () => showAppSnack(context, '$title: $sub (demo)'),
+  Widget _contact(BuildContext context, IconData icon, String title, String sub, {required VoidCallback onTap}) => AppCard(
+        onTap: onTap,
         child: Row(children: [
           Container(
             width: 42,

@@ -17,6 +17,9 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
       title: 'My Team',
       subtitle: 'Direct reports and today\'s status',
       shimmer: ShimmerLayout.list,
+      actions: [
+        AppButton(label: 'Add', icon: Icons.person_add_alt_outlined, compact: true, onPressed: () => context.push('/manager/team/add')),
+      ],
       builder: (context) {
         final app = context.watch<AppController>();
         final today = dateOnly(DateTime.now());

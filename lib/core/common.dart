@@ -7,6 +7,7 @@ export '../controllers/app_controller.dart';
 export '../controllers/auth_controller.dart';
 export '../models/models.dart';
 export 'theme/app_colors.dart';
+export 'utils/file_actions.dart';
 export 'utils/formatters.dart';
 export 'utils/responsive.dart';
 export 'utils/status_ext.dart';

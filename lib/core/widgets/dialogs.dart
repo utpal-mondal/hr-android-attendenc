@@ -90,20 +90,24 @@ Future<void> showSuccessDialog(BuildContext context, {required String title, req
 /// the coordinates against the branch geofence and rejects punches outside
 /// it. In the demo build (no API) location is not required and a
 /// placeholder fix is returned without asking for permission.
-Future<PunchLocation?> runLocationVerification(BuildContext context, {String office = ''}) async {
+///
+/// On a work-from-home day ([wfh]) the fix is still recorded so HR can see
+/// where the employee worked, but the server does not apply the geofence.
+Future<PunchLocation?> runLocationVerification(BuildContext context, {String office = '', bool wfh = false}) async {
   if (!context.read<AuthController>().isApiMode) {
     return const PunchLocation(latitude: 0, longitude: 0, accuracyMeters: 0);
   }
   return showDialog<PunchLocation>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _VerifyDialog(office: office),
+    builder: (_) => _VerifyDialog(office: office, wfh: wfh),
   );
 }
 
 class _VerifyDialog extends StatefulWidget {
-  const _VerifyDialog({required this.office});
+  const _VerifyDialog({required this.office, this.wfh = false});
   final String office;
+  final bool wfh;
 
   @override
   State<_VerifyDialog> createState() => _VerifyDialogState();
@@ -135,7 +139,9 @@ class _VerifyDialogState extends State<_VerifyDialog> {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied) {
-        return _fail('Location permission is needed to verify you are at the office.');
+        return _fail(widget.wfh
+            ? 'Location permission is needed to record where you are working from.'
+            : 'Location permission is needed to verify you are at the office.');
       }
       if (perm == LocationPermission.deniedForever) {
         return _fail('Location permission is blocked. Allow it in the app settings to check in.', settings: true);
@@ -189,7 +195,12 @@ class _VerifyDialogState extends State<_VerifyDialog> {
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text(
-            error ?? (widget.office.isEmpty ? 'Checking GPS signal...' : 'Checking GPS signal for ${widget.office}...'),
+            error ??
+                (widget.wfh
+                    ? 'Work from home day - recording your location...'
+                    : widget.office.isEmpty
+                        ? 'Checking GPS signal...'
+                        : 'Checking GPS signal for ${widget.office}...'),
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textSecondary),
           ),

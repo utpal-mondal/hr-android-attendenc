@@ -59,10 +59,13 @@ class MeetingsScreen extends StatelessWidget {
                   child: AppButton(
                     label: 'Join',
                     icon: Icons.videocam_outlined,
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      showAppSnack(context, 'Joining meeting (demo)...');
-                    },
+                    onPressed: m.link.trim().isEmpty
+                        ? null
+                        : () {
+                            Navigator.pop(ctx);
+                            final link = m.link.trim();
+                            openExternal(context, Uri.parse(link.startsWith('http') ? link : 'https://$link'), failMessage: 'Could not open the meeting link.');
+                          },
                   ),
                 ),
               ]),

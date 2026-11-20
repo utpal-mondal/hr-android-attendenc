@@ -36,16 +36,14 @@ void showDocumentPreview(BuildContext context, DocumentItem d) {
               ),
               const SizedBox(height: 10),
               Text('${d.extension} - ${d.size} - Updated ${Fmt.date(d.updated)}', style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary)),
-              const SizedBox(height: 4),
-              const Text('Preview placeholder - real document viewer comes with the API integration.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
               const SizedBox(height: 16),
               AppButton(
-                label: 'Download',
+                label: 'Download & open',
                 icon: Icons.file_download_outlined,
                 expand: true,
                 onPressed: () {
                   Navigator.pop(ctx);
-                  showAppSnack(context, 'Downloading ${d.title} (demo)...');
+                  downloadDocument(context, d);
                 },
               ),
             ],
@@ -92,7 +90,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   DocumentCard(
                     document: d,
                     onView: () => showDocumentPreview(context, d),
-                    onDownload: () => showAppSnack(context, 'Downloading ${d.title} (demo)...'),
+                    onDownload: () => downloadDocument(context, d),
                   ),
               ]),
           ],
@@ -100,4 +98,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       },
     );
   }
+}
+
+/// Downloads [d] from the server and opens it in the phone's viewer.
+Future<void> downloadDocument(BuildContext context, DocumentItem d) {
+  final name = d.title.toLowerCase().endsWith('.${d.extension.toLowerCase()}') ? d.title : '${d.title}.${d.extension.toLowerCase()}';
+  final app = context.read<AppController>();
+  return downloadAndOpen(context, fileName: name, download: (path) => app.downloadDocument(d, path));
 }

@@ -26,6 +26,25 @@ class _ReportsViewState extends State<ReportsView> {
         _Report.department => 'Departments',
       };
 
+  /// Per-employee summary for the selected period, as a CSV file the phone
+  /// opens in its spreadsheet app (Excel / Google Sheets).
+  void _export(List<Employee> employees, List<DateTime> days, List<Attendance> records) {
+    String cell(String v) => v.contains(RegExp(r'[",\n]')) ? '"${v.replaceAll('"', '""')}"' : v;
+    String hours(Duration d) => (d.inMinutes / 60).toStringAsFixed(1);
+    final b = StringBuffer('Employee,Department,Designation,Present,Late,WFH,On leave,Half day,Absent,Worked hours,Overtime hours\n');
+    for (final e in employees) {
+      final mine = records.where((a) => a.employeeId == e.id).toList();
+      int count(AttendanceStatus s) => mine.where((a) => a.status == s).length;
+      final worked = mine.fold(Duration.zero, (t, a) => t + (a.checkIn == null ? Duration.zero : a.worked));
+      final ot = mine.fold(Duration.zero, (t, a) => t + (a.checkOut == null ? Duration.zero : a.overtime));
+      final absent = days.length - mine.where((a) => a.status != AttendanceStatus.absent).length;
+      b.writeln([e.name, e.department, e.designation, '${count(AttendanceStatus.present)}', '${count(AttendanceStatus.late)}', '${count(AttendanceStatus.wfh)}', '${count(AttendanceStatus.leave)}', '${count(AttendanceStatus.halfDay)}', '$absent', hours(worked), hours(ot)].map(cell).join(','));
+    }
+    final from = days.first, to = days.last;
+    String ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    saveTextAndOpen(context, fileName: 'attendance-report_${ymd(from)}_to_${ymd(to)}.csv', text: b.toString());
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
@@ -147,7 +166,7 @@ class _ReportsViewState extends State<ReportsView> {
               onSelected: (d) => setState(() => _period = d),
             ),
           ),
-          AppButton(label: 'Export', icon: Icons.file_download_outlined, type: AppButtonType.secondary, compact: true, onPressed: () => showAppSnack(context, '${_label(_report)} report exported (demo).')),
+          AppButton(label: 'Export', icon: Icons.file_download_outlined, type: AppButtonType.secondary, compact: true, onPressed: employees.isEmpty ? null : () => _export(employees, days, records)),
         ]),
         const Gap(18),
         content,

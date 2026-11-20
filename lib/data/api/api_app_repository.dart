@@ -143,8 +143,9 @@ class ApiAppRepository implements AppRepository {
     final myId = _myStaffId;
     final now = DateTime.now();
 
-    // ── lookups first (needed to resolve names -> ids when mapping) ──
-    final lookups = await Future.wait([
+    // Lookups (needed to resolve names -> ids when mapping) and the main data
+    // batch are fetched at the same time: one network round trip, not two.
+    final lookupsFuture = Future.wait([
       _guard(_api.departments(), const <Json>[]),
       _guard(_api.designations(), const <Json>[]),
       _guard(_api.branches(), const <Json>[]),
@@ -155,38 +156,8 @@ class ApiAppRepository implements AppRepository {
       _guard(_api.ticketCategories(), const <Json>[]),
     ]);
 
-    final deptRows = lookups[0];
-    final desigRows = lookups[1];
-    final branchRows = lookups[2];
-    final shiftRows = lookups[4];
-    final leaveTypeRows = lookups[5];
-    final expenseCatRows = lookups[6];
-    final ticketCatRows = lookups[7];
-
-    for (final j in deptRows) {
-      _deptIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
-    }
-    for (final j in desigRows) {
-      _desigIds[str(j['title'])] = intOrNull(j['id']) ?? -1;
-    }
-    for (final j in branchRows) {
-      _branchIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
-    }
-    for (final j in shiftRows) {
-      _shiftIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
-    }
-    for (final j in leaveTypeRows) {
-      _leaveTypeIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
-    }
-    for (final j in expenseCatRows) {
-      _expenseCatIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
-    }
-    for (final j in ticketCatRows) {
-      _ticketCatIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
-    }
-
     // ── main data batch ──
-    final batch = await Future.wait([
+    final batchFuture = Future.wait([
       _guard(_allPages((p) => _api.listStaff(page: p, perPage: 100), pageSize: 100), const <Json>[]),
       _guard(_api.holidays(year: now.year), const <Json>[]),
       _guard(
@@ -226,6 +197,39 @@ class ApiAppRepository implements AppRepository {
       ),
       _guard(myId == null ? Future.value(const <Json>[]) : _api.staffAssets(myId), const <Json>[]),
     ]);
+
+    final lookups = await lookupsFuture;
+    final batch = await batchFuture;
+
+    final deptRows = lookups[0];
+    final desigRows = lookups[1];
+    final branchRows = lookups[2];
+    final shiftRows = lookups[4];
+    final leaveTypeRows = lookups[5];
+    final expenseCatRows = lookups[6];
+    final ticketCatRows = lookups[7];
+
+    for (final j in deptRows) {
+      _deptIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in desigRows) {
+      _desigIds[str(j['title'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in branchRows) {
+      _branchIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in shiftRows) {
+      _shiftIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in leaveTypeRows) {
+      _leaveTypeIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in expenseCatRows) {
+      _expenseCatIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in ticketCatRows) {
+      _ticketCatIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
 
     final staffRows = batch[0] as List<Json>;
     final holidayRows = batch[1] as List<Json>;
@@ -388,6 +392,25 @@ class ApiAppRepository implements AppRepository {
       auditLogs: [for (final j in auditPage.items) auditFromJson(j)],
       leaveTypeNames: leaveTypeNames,
       leaveBalances: _balances,
+    );
+  }
+
+  @override
+  Future<({List<Department> departments, List<Branch> branches, List<Shift> shifts})> loadOrgLookups() async {
+    final rows = await Future.wait([_api.departments(), _api.branches(), _api.shifts()]);
+    for (final j in rows[0]) {
+      _deptIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in rows[1]) {
+      _branchIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    for (final j in rows[2]) {
+      _shiftIds[str(j['name'])] = intOrNull(j['id']) ?? -1;
+    }
+    return (
+      departments: [for (final j in rows[0]) departmentFromJson(j)],
+      branches: [for (final j in rows[1]) branchFromJson(j)],
+      shifts: [for (final j in rows[2]) shiftFromJson(j)],
     );
   }
 
@@ -771,6 +794,38 @@ class ApiAppRepository implements AppRepository {
         final id = int.tryParse(d.id);
         if (id != null) await _api.deleteDocument(id);
       });
+
+  @override
+  Future<DocumentItem> uploadDocument({required String title, required String category, required String filename, required List<int> bytes}) async {
+    try {
+      final res = await _api.uploadDocument(
+        title: title,
+        bytes: bytes,
+        filename: filename,
+        category: category,
+        visibility: 'public', // company documents: every employee can see them
+      );
+      lastError = null;
+      return documentFromJson(res);
+    } on ApiException catch (e) {
+      lastError = e.message;
+      throw RepoWriteException(e.message);
+    } catch (e) {
+      lastError = 'Could not upload the document. Please try again.';
+      throw RepoWriteException(lastError!);
+    }
+  }
+
+  @override
+  Future<void> downloadDocument(DocumentItem d, String savePath) async {
+    final id = int.tryParse(d.id);
+    if (id == null) throw RepoWriteException('This document is not on the server yet.');
+    try {
+      await _api.downloadDocument(id, savePath);
+    } on ApiException catch (e) {
+      throw RepoWriteException(e.message);
+    }
+  }
 
   @override
   Future<void> saveExpense(Expense e, {bool isNew = false}) =>

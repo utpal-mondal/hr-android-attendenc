@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:office_management/core/common.dart';
 
@@ -157,6 +158,25 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Makes sure departments, branches and shifts are loaded (the full [load]
+  /// swallows per-endpoint failures). Returns an error message, or null.
+  Future<String?> ensureOrgLookups({bool force = false}) async {
+    if (!force && departments.isNotEmpty && branches.isNotEmpty && shifts.isNotEmpty) return null;
+    final gen = _generation;
+    try {
+      final l = await _repo.loadOrgLookups();
+      if (gen != _generation) return null;
+      departments = l.departments;
+      branches = l.branches;
+      shifts = l.shifts;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('ensureOrgLookups failed: $e');
+      return 'Could not load departments, branches and shifts. Check your connection and try again.';
+    }
+  }
+
   // ---------------------------------------------------------------- lookups
 
   Employee get me => employees.firstWhere(
@@ -264,6 +284,53 @@ class AppController extends ChangeNotifier {
         .toList();
   }
 
+  /// Office-wide work-from-home weekday (matches the API's default
+  /// `attendance.wfh_weekdays` setting).
+  static const wfhWeekday = DateTime.wednesday;
+
+  /// WFH day for [empId]: every Wednesday, or a date covered by an approved
+  /// WFH request. On these days check-in/out works from anywhere (the API
+  /// skips the office geofence) and the day is recorded as WFH.
+  bool isWfhDay(String empId, DateTime day) {
+    final d = dateOnly(day);
+    if (d.weekday == wfhWeekday) return true;
+    return wfhRequests.any((r) =>
+        r.employeeId == empId &&
+        r.status == RequestStatus.approved &&
+        !d.isBefore(dateOnly(r.from)) &&
+        !d.isAfter(dateOnly(r.to)));
+  }
+
+  bool get isMyWfhToday => isWfhDay(_meId, DateTime.now());
+
+  /// Adds the distance from the employee's branch office to a GPS fix.
+  PunchLocation? _withDistance(PunchLocation? loc, Employee e) {
+    if (loc == null || !loc.isReal) return null;
+    Branch? b;
+    for (final x in branches) {
+      if (x.name == e.branch) b = x;
+    }
+    final lat = b?.latitude, lng = b?.longitude;
+    return PunchLocation(
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      accuracyMeters: loc.accuracyMeters,
+      officeName: b?.name,
+      distanceFromOfficeMeters:
+          lat == null || lng == null ? null : distanceMeters(lat, lng, loc.latitude, loc.longitude).round(),
+    );
+  }
+
+  /// Great-circle (haversine) distance in metres.
+  static double distanceMeters(double lat1, double lng1, double lat2, double lng2) {
+    const r = 6371000.0;
+    double rad(double d) => d * math.pi / 180;
+    final dLat = rad(lat2 - lat1), dLng = rad(lng2 - lng1);
+    final a = math.pow(math.sin(dLat / 2), 2) +
+        math.cos(rad(lat1)) * math.cos(rad(lat2)) * math.pow(math.sin(dLng / 2), 2);
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
   bool _punching = false;
 
   /// Checks in for today. Returns false (and changes nothing) when the user
@@ -282,10 +349,14 @@ class AppController extends ChangeNotifier {
         id: 'A-${e.id}-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}',
         employeeId: e.id,
         date: dateOnly(now),
-        status: now.isAfter(limit) ? AttendanceStatus.late : AttendanceStatus.present,
+        status: isWfhDay(e.id, now)
+            ? AttendanceStatus.wfh
+            : (now.isAfter(limit) ? AttendanceStatus.late : AttendanceStatus.present),
         checkIn: now,
         office: e.branch,
-      )..punchLocation = location;
+      )
+        ..punchLocation = location
+        ..checkInLocation = _withDistance(location, e);
       final previous = attendance.where((a) => a.id == rec.id).toList();
       attendance.removeWhere((a) => a.id == rec.id);
       attendance.add(rec);
@@ -339,11 +410,14 @@ class AppController extends ChangeNotifier {
       final now = DateTime.now();
       final openBreak = a.breaks.isNotEmpty && a.breaks.last.end == null ? a.breaks.last : null;
       openBreak?.end = now;
+      final prevOutLocation = a.checkOutLocation;
       a.checkOut = now;
       a.punchLocation = location;
+      a.checkOutLocation = _withDistance(location, me);
       notifyListeners();
       final ok = await _persist(() => _repo.saveAttendance(a), undo: () {
         a.checkOut = null;
+        a.checkOutLocation = prevOutLocation;
         openBreak?.end = null;
       });
       if (!ok) return false;
@@ -968,12 +1042,26 @@ class AppController extends ChangeNotifier {
 
   // --------------------------------------------------------------- documents
 
-  void addDocument(String title, String category) {
-    documents.insert(
-        0, DocumentItem(id: _newId('DOC'), title: title, category: category, updated: DateTime.now(), size: '1.0 MB'));
+  /// Uploads a file to the server; it appears in the list once stored.
+  /// Throws [RepoWriteException] with a message safe to show.
+  Future<DocumentItem> uploadDocument({
+    required String title,
+    required String category,
+    required String filename,
+    required List<int> bytes,
+  }) async {
+    final d = await _repo.uploadDocument(title: title, category: category, filename: filename, bytes: bytes);
+    documents.insert(0, d);
     _audit('Uploaded document', title, Icons.upload_file_outlined);
     notifyListeners();
+    return d;
   }
+
+  /// Rebuilds listeners after a model object was edited in place.
+  void refreshUi() => notifyListeners();
+
+  /// Downloads [d] to [savePath]. Throws [RepoWriteException] on failure.
+  Future<void> downloadDocument(DocumentItem d, String savePath) => _repo.downloadDocument(d, savePath);
 
   void deleteDocument(DocumentItem d) {
     final index = documents.indexWhere((x) => x.id == d.id);

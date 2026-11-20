@@ -24,7 +24,7 @@ class Employee {
   final String id;
   final String name;
   final String email;
-  final String phone;
+  String phone; // editable by the employee from My Profile
   final String department;
   final String designation;
   final String branch;

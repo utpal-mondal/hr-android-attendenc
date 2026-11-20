@@ -21,6 +21,37 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   String _type = 'Full-time';
   DateTime? _joinDate = dateOnly(DateTime.now());
   bool _busy = false;
+  bool _lookupsLoading = false;
+  String? _lookupError;
+
+  @override
+  void initState() {
+    super.initState();
+    final app = context.read<AppController>();
+    // A manager adding someone is their reporting manager by default (the API
+    // only lists a manager's direct reports, so this keeps the new hire visible).
+    if (app.role == UserRole.manager) _managerId = app.me.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadLookups();
+    });
+  }
+
+  Future<void> _loadLookups({bool force = false}) async {
+    setState(() {
+      _lookupsLoading = true;
+      _lookupError = null;
+    });
+    final err = await context.read<AppController>().ensureOrgLookups(force: force);
+    if (!mounted) return;
+    setState(() {
+      _lookupsLoading = false;
+      _lookupError = err;
+    });
+  }
+
+  /// Unique, non-empty names (DropdownButton asserts on duplicate values).
+  static List<String> _names(Iterable<String> names) =>
+      names.where((n) => n.trim().isNotEmpty).toSet().toList();
 
   @override
   void dispose() {
@@ -116,20 +147,32 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Text('Employment details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                   const Gap(16),
+                  if (_lookupsLoading)
+                    const Padding(padding: EdgeInsets.only(bottom: 14), child: LinearProgressIndicator())
+                  else if (_lookupError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Row(children: [
+                        Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_lookupError!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                        TextButton(onPressed: () => _loadLookups(force: true), child: const Text('Retry')),
+                      ]),
+                    ),
                   pair(
-                    AppDropdown<String>(label: 'Department', items: app.departments.map((d) => d.name).toList(), value: _department, validator: (v) => v == null ? 'Select department' : null, onChanged: (v) => setState(() => _department = v)),
+                    AppDropdown<String>(label: 'Department', items: _names(app.departments.map((d) => d.name)), value: _department, validator: (v) => v == null ? 'Select department' : null, onChanged: (v) => setState(() => _department = v)),
                     AppTextField(label: 'Designation', controller: _designation, validator: (v) => (v == null || v.trim().length < 2) ? 'Enter designation' : null),
                   ),
                   const Gap(14),
                   pair(
-                    AppDropdown<String>(label: 'Branch', items: app.branches.map((b) => b.name).toList(), value: _branch, validator: (v) => v == null ? 'Select branch' : null, onChanged: (v) => setState(() => _branch = v)),
-                    AppDropdown<String>(label: 'Shift', items: app.shifts.map((s) => s.name).toList(), value: _shift, validator: (v) => v == null ? 'Select shift' : null, onChanged: (v) => setState(() => _shift = v)),
+                    AppDropdown<String>(label: 'Branch', items: _names(app.branches.map((b) => b.name)), value: _branch, validator: (v) => v == null ? 'Select branch' : null, onChanged: (v) => setState(() => _branch = v)),
+                    AppDropdown<String>(label: 'Shift', items: _names(app.shifts.map((s) => s.name)), value: _shift, validator: (v) => v == null ? 'Select shift' : null, onChanged: (v) => setState(() => _shift = v)),
                   ),
                   const Gap(14),
                   pair(
                     AppDropdown<String>(
                       label: 'Reporting manager',
-                      items: app.managers.map((m) => m.id).toList(),
+                      items: {...app.managers.map((m) => m.id), if (_managerId != null) _managerId!}.toList(),
                       itemLabel: (id) => '${app.nameOf(id)} (${app.employeeById(id)?.department ?? ''})',
                       value: _managerId,
                       hint: 'Select manager',

@@ -1181,17 +1181,23 @@ class OfficeApi {
   Future<PagedResult> listDocuments({int page = 1}) => _page('/documents', page: page);
 
   /// POST /documents (multipart). visibility: private | staff | public
+  /// Pass either [filePath] or [bytes] (+ [filename]); Android file pickers
+  /// often return content URIs without a local path.
   Future<Json> uploadDocument({
     required String title,
-    required String filePath, // pdf/doc/docx/xls/xlsx/jpg/jpeg/png/txt, max 10 MB
+    String? filePath, // pdf/doc/docx/xls/xlsx/jpg/jpeg/png/txt, max 10 MB
+    List<int>? bytes,
     String? filename,
     String? category,
     String? visibility,
     int? ownerStaffId,
   }) async {
+    assert(filePath != null || bytes != null, 'filePath or bytes is required');
     final form = FormData.fromMap({
       'title': title,
-      'file': await _file(filePath, filename: filename),
+      'file': bytes != null
+          ? MultipartFile.fromBytes(bytes, filename: filename ?? 'document')
+          : await _file(filePath!, filename: filename),
       if (category != null) 'category': category,
       if (visibility != null) 'visibility': visibility,
       if (ownerStaffId != null) 'owner_staff_id': ownerStaffId,

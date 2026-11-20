@@ -15,7 +15,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     (
       Icons.fingerprint,
       'Smart attendance',
-      'Check in, take breaks and check out in a single tap with simulated location verification and QR support.'
+      'Check in, take breaks and check out in a single tap. Your location is recorded with each check-in, and Wednesdays are work-from-home days.'
     ),
     (
       Icons.event_available_outlined,

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: the app's building logo, centred inside the
+     66dp safe zone of the 108dp canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.2"
+        android:scaleY="2.2"
+        android:translateX="27.6"
+        android:translateY="27.6">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M17,11V3H7v4H3v14h8v-4h2v4h8V11h-4z" />
+        <path
+            android:fillColor="#1F6F66"
+            android:pathData="M5,17h2v2H5zM5,13h2v2H5zM5,9h2v2H5zM9,13h2v2H9zM9,9h2v2H9zM9,5h2v2H9zM13,13h2v2h-2zM13,9h2v2h-2zM13,5h2v2h-2zM17,17h2v2h-2zM17,13h2v2h-2z" />
+    </group>
+</vector>

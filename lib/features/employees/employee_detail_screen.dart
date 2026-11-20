@@ -1,4 +1,5 @@
 import 'package:office_management/core/common.dart';
+import 'package:office_management/features/attendance/punch_location_view.dart';
 
 class EmployeeDetailScreen extends StatelessWidget {
   const EmployeeDetailScreen({super.key, required this.id});
@@ -90,8 +91,8 @@ class _EmployeeProfileBodyState extends State<EmployeeProfileBody> {
                 ),
               ),
               Wrap(spacing: 10, runSpacing: 10, children: [
-                AppButton(label: 'Email', icon: Icons.mail_outline, type: AppButtonType.secondary, compact: true, onPressed: () => showAppSnack(context, 'Opening email to ${e.email} (demo).')),
-                AppButton(label: 'Call', icon: Icons.call_outlined, type: AppButtonType.secondary, compact: true, onPressed: () => showAppSnack(context, 'Calling ${e.phone} (demo).')),
+                AppButton(label: 'Email', icon: Icons.mail_outline, type: AppButtonType.secondary, compact: true, onPressed: e.email.isEmpty ? null : () => openExternal(context, Uri(scheme: 'mailto', path: e.email), failMessage: 'No email app found on this phone.')),
+                AppButton(label: 'Call', icon: Icons.call_outlined, type: AppButtonType.secondary, compact: true, onPressed: e.phone.trim().isEmpty ? null : () => openExternal(context, Uri(scheme: 'tel', path: e.phone.replaceAll(RegExp(r'[^0-9+]'), '')), failMessage: 'This device cannot make calls.')),
               ]),
             ],
           ),
@@ -163,7 +164,12 @@ class _EmployeeProfileBodyState extends State<EmployeeProfileBody> {
         ]),
         const Gap(16),
         const SectionHeader(title: 'Recent records'),
-        ResponsiveGrid(minTileWidth: 400, children: [for (final r in records.take(8)) AttendanceCard(record: r)]),
+        ResponsiveGrid(minTileWidth: 400, children: [for (final r in records.take(8))
+          AttendanceCard(
+            record: r,
+            // Tap a day to see where the check-in / check-out happened.
+            onTap: r.checkIn == null ? null : () => showPunchLocationsSheet(context, r, employeeName: e.name),
+          )]),
       ],
     );
   }

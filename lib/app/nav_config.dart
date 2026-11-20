@@ -13,6 +13,9 @@ class NavItem {
 }
 
 class NavConfig {
+  /// Screens that only work with the bundled demo data (no API endpoint yet).
+  static const demoOnlyPaths = {'/employee/payslips'};
+
   static List<NavItem> forRole(UserRole role) => switch (role) {
         UserRole.employee => const [
             NavItem('Home', Icons.home_outlined, '/employee/home', primary: true),

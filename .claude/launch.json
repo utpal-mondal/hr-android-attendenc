@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-mock",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": ["run", "-d", "web-server", "--web-port", "8765", "--dart-define=USE_API=false"],
+      "port": 8765
+    },
+    {
+      "name": "admin-panel",
+      "runtimeExecutable": "C:/laragon/bin/php/php-8.3.36-Win32-vs16-x64/php.exe",
+      "runtimeArgs": ["C:/laragon/www/office-management-api/artisan", "serve", "--host=127.0.0.1", "--port=8010"],
+      "port": 8010
+    }
+  ]
+}

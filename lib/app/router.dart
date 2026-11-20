@@ -120,6 +120,7 @@ GoRouter buildRouter(AuthController auth) {
         routes: [
           _r('/manager/home', (s) => const ManagerDashboardScreen()),
           _r('/manager/team', (s) => const MyTeamScreen()),
+          _r('/manager/team/add', (s) => const AddEmployeeScreen()),
           _r('/manager/team/:id', (s) => EmployeeDetailScreen(id: s.pathParameters['id'] ?? '')),
           _r('/manager/attendance', (s) => const TeamAttendanceScreen()),
           _r('/manager/approvals', (s) => const ApprovalCenterScreen()),

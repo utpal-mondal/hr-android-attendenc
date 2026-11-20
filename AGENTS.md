@@ -46,6 +46,26 @@ API contract details live in `FLUTTER_API_GUIDE.md` (outside this repo).
   "Super Admin" and "HR Admin" both map to `hr`).
 - Screens never call the API directly; everything goes through `AppController`.
 
+## Super Admin web panel (backend)
+
+- Blade panel inside the Laravel backend at `/admin` (session login, Super
+  Admin only; plain CSS in `public/admin-assets/admin.css`, no build step).
+  Code: `app/Http/Controllers/Admin/*`, `resources/views/admin/*`,
+  `routes/web.php`, tests in `tests/Feature/AdminPanelTest.php`.
+- Approvals delegate to the API controllers, so they follow the same rules.
+- WFH weekdays are editable there; if changed, update `AppController.wfhWeekday`.
+
+## Attendance & WFH
+
+- Every Wednesday is WFH for everyone, as is any day covered by an approved
+  WFH request. On those days the API skips the branch geofence and stores
+  status `wfh` (backend setting `attendance.wfh_weekdays`, default `3`; the
+  app's `AppController.wfhWeekday` must match).
+- GPS is still captured on every punch. Attendance rows carry
+  `check_in_location` / `check_out_location` (with distance from the office),
+  shown on the attendance board, attendance details and the employee profile's
+  Attendance tab (`features/attendance/punch_location_view.dart`).
+
 ## Known gaps vs the API
 
 - No payslip endpoint → payslips list is always empty in API mode.
@@ -59,5 +79,17 @@ API contract details live in `FLUTTER_API_GUIDE.md` (outside this repo).
 ## Verify
 
 - `dart analyze lib` and `flutter test` must stay clean.
-- AndroidManifest keeps `INTERNET` + `usesCleartextTraffic` for the HTTP dev
-  server — don't remove without switching the app to HTTPS config.
+- Release builds are HTTPS-only (`usesCleartextTraffic="false"` in the main
+  AndroidManifest). Plain HTTP for the local dev server is enabled only in
+  `android/app/src/debug/AndroidManifest.xml`.
+
+## Play Store release
+
+- Bump `version:` in `pubspec.yaml` (the `+N` build number must be higher than
+  the last upload), then `flutter build appbundle --release` and upload
+  `build/app/outputs/bundle/release/app-release.aab`.
+- Signed with the upload key from `android/key.properties` (git-ignored).
+- Launcher icon: adaptive vector in `res/drawable/ic_launcher_foreground.xml`
+  + PNGs; Play listing icon in `store/play_store_icon_512.png`.
+- Payslips and QR scan are demo-only and hidden in the live app
+  (`NavConfig.demoOnlyPaths`, employee home quick actions).

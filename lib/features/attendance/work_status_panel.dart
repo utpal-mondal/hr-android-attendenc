@@ -36,7 +36,7 @@ class _LiveDurationState extends State<LiveDuration> {
 Future<void> doCheckIn(BuildContext context) async {
   final app = context.read<AppController>();
   if (app.workState != WorkState.notStarted) return; // double tap
-  final location = await runLocationVerification(context, office: app.me.branch);
+  final location = await runLocationVerification(context, office: app.me.branch, wfh: app.isMyWfhToday);
   if (location == null || !context.mounted) return;
   if (!await app.checkIn(location: location)) return; // error already shown
   if (!context.mounted) return;
@@ -59,7 +59,7 @@ Future<void> doCheckOut(BuildContext context) async {
     destructive: true,
   );
   if (!ok || !context.mounted) return;
-  final location = await runLocationVerification(context, office: app.me.branch);
+  final location = await runLocationVerification(context, office: app.me.branch, wfh: app.isMyWfhToday);
   if (location == null || !context.mounted) return;
   if (!await app.checkOut(location: location)) return; // error already shown
   if (!context.mounted) return;
@@ -135,6 +135,17 @@ class WorkStatusPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (app.isMyWfhToday) ...[
+            const SizedBox(height: 10),
+            const Row(children: [
+              Icon(Icons.home_work_outlined, color: Color(0xFF84CAFF), size: 16),
+              SizedBox(width: 6),
+              Flexible(
+                child: Text('Work from home today - check in and out from anywhere',
+                    style: TextStyle(color: Color(0xFF84CAFF), fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ],
           const SizedBox(height: 16),
           const Text('Working duration', style: TextStyle(color: Colors.white60, fontSize: 12.5)),
           const SizedBox(height: 2),

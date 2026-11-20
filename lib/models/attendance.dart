@@ -13,10 +13,23 @@ class AttendanceBreak {
 
 /// GPS fix taken when the employee punches in or out.
 class PunchLocation {
-  const PunchLocation({required this.latitude, required this.longitude, required this.accuracyMeters});
+  const PunchLocation({
+    required this.latitude,
+    required this.longitude,
+    required this.accuracyMeters,
+    this.distanceFromOfficeMeters,
+    this.officeName,
+  });
   final double latitude;
   final double longitude;
   final int accuracyMeters;
+
+  /// Straight-line distance from the employee's branch office, when known.
+  final int? distanceFromOfficeMeters;
+  final String? officeName;
+
+  /// The demo build sends a 0,0 placeholder instead of a real GPS fix.
+  bool get isReal => latitude != 0 || longitude != 0;
 }
 
 class AttendanceEvent {
@@ -58,6 +71,12 @@ class Attendance {
   /// Device location captured for the most recent punch (check-in or
   /// check-out). Sent to the API, which enforces the branch geofence.
   PunchLocation? punchLocation;
+
+  /// Where the employee checked in / out (shown to HR, managers and admins).
+  PunchLocation? checkInLocation;
+  PunchLocation? checkOutLocation;
+
+  bool get isWfh => status == AttendanceStatus.wfh;
 
   Duration get breakTime => breaks.fold(Duration.zero, (sum, b) => sum + b.duration);
 

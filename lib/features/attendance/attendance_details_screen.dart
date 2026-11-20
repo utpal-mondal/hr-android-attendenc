@@ -1,4 +1,5 @@
 import 'package:office_management/core/common.dart';
+import 'package:office_management/features/attendance/punch_location_view.dart';
 
 class AttendanceDetailsScreen extends StatelessWidget {
   const AttendanceDetailsScreen({super.key, required this.id});
@@ -56,7 +57,15 @@ class AttendanceDetailsScreen extends StatelessWidget {
                 _kv('Working hours', branch.first.workingHours),
               ],
               const Gap(10),
-              _kv('Verification', a.office.startsWith('Remote') ? 'Work from home' : 'Geofence verified (simulated)'),
+              _kv('Work mode', a.isWfh ? 'Work from home' : 'Office'),
+              if (a.checkIn != null) ...[
+                const Gap(14),
+                PunchLocationTile(title: 'Check-in location', time: a.checkIn, location: a.checkInLocation, showDistance: !a.isWfh),
+              ],
+              if (a.checkOut != null) ...[
+                const Gap(10),
+                PunchLocationTile(title: 'Check-out location', time: a.checkOut, location: a.checkOutLocation, showDistance: !a.isWfh),
+              ],
             ],
           ),
         );

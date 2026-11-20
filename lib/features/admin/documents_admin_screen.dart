@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:office_management/core/common.dart';
 import 'package:office_management/features/documents/documents_screen.dart';
 
@@ -16,55 +17,89 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
     final formKey = GlobalKey<FormState>();
     final title = TextEditingController();
     String category = 'HR Policy';
-    bool picked = false;
+    PlatformFile? file;
+    var busy = false;
     final app = context.read<AppController>();
     showAppSheet<void>(
       context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Form(
-            key: formKey,
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Upload document', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 16),
-              InkWell(
-                onTap: () => setS(() => picked = !picked),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12), border: Border.all(color: picked ? AppColors.success : AppColors.border)),
-                  child: Column(children: [
-                    Icon(picked ? Icons.check_circle : Icons.cloud_upload_outlined, size: 34, color: picked ? AppColors.success : AppColors.teal),
-                    const SizedBox(height: 8),
-                    Text(picked ? 'document.pdf selected' : 'Tap to choose a file (demo)', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  ]),
+        builder: (ctx, setS) {
+          Future<void> pick() async {
+            final files = await FilePicker.pickFiles(
+              type: FileType.custom,
+              allowedExtensions: const ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'txt'],
+            );
+            if (files.isEmpty) return;
+            final f = files.first;
+            final size = f.lengthSync() ?? await f.length() ?? 0;
+            if (size > 10 * 1024 * 1024) {
+              if (ctx.mounted) showAppSnack(ctx, 'File is larger than 10 MB.', error: true);
+              return;
+            }
+            setS(() {
+              file = f;
+              if (title.text.trim().isEmpty) {
+                final n = f.name;
+                title.text = n.contains('.') ? n.substring(0, n.lastIndexOf('.')) : n;
+              }
+            });
+          }
+
+          Future<void> submit() async {
+            if (!formKey.currentState!.validate()) return;
+            final f = file;
+            if (f == null) {
+              showAppSnack(ctx, 'Please choose a file first.', error: true);
+              return;
+            }
+            setS(() => busy = true);
+            try {
+              await app.uploadDocument(title: title.text.trim(), category: category, filename: f.name, bytes: await f.readAsBytes());
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              if (context.mounted) showAppSnack(context, 'Document uploaded. All employees can now see it.');
+            } catch (e) {
+              if (!ctx.mounted) return;
+              setS(() => busy = false);
+              showAppSnack(ctx, e.toString(), error: true);
+            }
+          }
+
+          final f = file;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Form(
+              key: formKey,
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Upload document', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: busy ? null : pick,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                    decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12), border: Border.all(color: f != null ? AppColors.success : AppColors.border)),
+                    child: Column(children: [
+                      Icon(f != null ? Icons.check_circle : Icons.cloud_upload_outlined, size: 34, color: f != null ? AppColors.success : AppColors.teal),
+                      const SizedBox(height: 8),
+                      Text(f != null ? f.name : 'Tap to choose a file', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(f != null ? 'Tap to choose a different file' : 'PDF, Word, Excel, image or text - up to 10 MB',
+                          textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    ]),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              AppTextField(label: 'Document title', controller: title, validator: (v) => (v == null || v.trim().length < 3) ? 'Enter a title' : null),
-              const SizedBox(height: 14),
-              AppDropdown<String>(label: 'Category', items: const ['Employment', 'HR Policy', 'Company'], value: category, onChanged: (v) => setS(() => category = v ?? 'HR Policy')),
-              const SizedBox(height: 20),
-              AppButton(
-                label: 'Upload',
-                icon: Icons.upload_file_outlined,
-                expand: true,
-                onPressed: () {
-                  if (!formKey.currentState!.validate()) return;
-                  if (!picked) {
-                    showAppSnack(ctx, 'Please choose a file first.', error: true);
-                    return;
-                  }
-                  app.addDocument(title.text.trim(), category);
-                  Navigator.pop(ctx);
-                  showAppSnack(context, 'Document uploaded.');
-                },
-              ),
-            ]),
-          ),
-        ),
+                const SizedBox(height: 14),
+                AppTextField(label: 'Document title', controller: title, validator: (v) => (v == null || v.trim().length < 3) ? 'Enter a title' : null),
+                const SizedBox(height: 14),
+                AppDropdown<String>(label: 'Category', items: const ['Employment', 'HR Policy', 'Company'], value: category, onChanged: (v) => setS(() => category = v ?? 'HR Policy')),
+                const SizedBox(height: 20),
+                AppButton(label: 'Upload', icon: Icons.upload_file_outlined, expand: true, loading: busy, onPressed: busy ? null : submit),
+              ]),
+            ),
+          );
+        },
       ),
     );
   }

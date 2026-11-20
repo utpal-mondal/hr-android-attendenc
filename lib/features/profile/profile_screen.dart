@@ -4,32 +4,65 @@ import 'package:office_management/features/employees/employee_detail_screen.dart
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  /// Lets the employee update their phone number (`PUT /profile`). Other
+  /// details (department, address, ...) are managed by HR.
   void _edit(BuildContext context, Employee e) {
+    final formKey = GlobalKey<FormState>();
     final phone = TextEditingController(text: e.phone);
-    final address = TextEditingController(text: e.address);
+    final api = context.read<AuthController>().api;
+    var busy = false;
     showAppSheet<void>(
       context,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Edit profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 16),
-            AppTextField(label: 'Phone', controller: phone, keyboardType: TextInputType.phone, prefixIcon: Icons.call_outlined),
-            const SizedBox(height: 14),
-            AppTextField(label: 'Address', controller: address, maxLines: 2, prefixIcon: Icons.home_outlined),
-            const SizedBox(height: 20),
-            AppButton(
-              label: 'Save changes',
-              expand: true,
-              onPressed: () {
-                Navigator.pop(ctx);
-                showAppSnack(context, 'Profile update request sent to HR (demo).');
-              },
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Edit profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                const Text('Other details such as department and address are updated by HR.', style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary)),
+                const SizedBox(height: 16),
+                AppTextField(
+                  label: 'Phone',
+                  controller: phone,
+                  keyboardType: TextInputType.phone,
+                  prefixIcon: Icons.call_outlined,
+                  validator: (v) => (v == null || v.replaceAll(RegExp(r'[^0-9]'), '').length < 10) ? 'Enter a valid phone number' : null,
+                ),
+                const SizedBox(height: 20),
+                AppButton(
+                  label: 'Save changes',
+                  expand: true,
+                  loading: busy,
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+                          final value = phone.text.trim();
+                          setS(() => busy = true);
+                          try {
+                            await api?.updateProfile(phone: value);
+                            e.phone = value;
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            if (context.mounted) {
+                              context.read<AppController>().refreshUi();
+                              showAppSnack(context, 'Phone number updated.');
+                            }
+                          } catch (err) {
+                            if (!ctx.mounted) return;
+                            setS(() => busy = false);
+                            showAppSnack(ctx, err.toString(), error: true);
+                          }
+                        },
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

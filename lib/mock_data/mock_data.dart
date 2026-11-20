@@ -172,6 +172,10 @@ class MockData {
           s = AttendanceStatus.absent;
         }
         if (isToday && (s == AttendanceStatus.absent || s == AttendanceStatus.halfDay)) s = AttendanceStatus.present;
+        // Every Wednesday is work-from-home for the whole office.
+        if (d.weekday == DateTime.wednesday && (s == AttendanceStatus.present || s == AttendanceStatus.late)) {
+          s = AttendanceStatus.wfh;
+        }
 
         if (s == AttendanceStatus.leave || s == AttendanceStatus.absent) {
           attendance.add(Attendance(id: aid(e.id, d), employeeId: e.id, date: d, status: s, office: e.branch));

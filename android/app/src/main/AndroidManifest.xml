@@ -1,15 +1,27 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Needed to reach the Laravel API. Cleartext stays enabled so the app
-         can talk to a plain-HTTP dev server (10.0.2.2 / localhost / LAN IP). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Needed to reach the Laravel API (HTTPS in release). Plain HTTP for a
+         local dev server is allowed only in debug builds: see
+         src/debug/AndroidManifest.xml. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- GPS fix sent with check-in / check-out; the API enforces the branch geofence. -->
+    <!-- GPS fix sent with check-in / check-out (foreground only); the API
+         enforces the branch geofence on office days. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- open_filex declares these, but the app only opens files it saved in
+         its own folder and picks uploads with the system file picker, so
+         they are not needed. Google Play restricts photo/video access, so
+         strip them from the merged manifest. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
     <application
         android:label="HRM Matainja"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
